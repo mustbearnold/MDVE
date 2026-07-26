@@ -55,6 +55,18 @@ Follow-up turns use `codex exec resume <thread id>`, so the agent keeps the
 conversation context across messages. The thread id is stored in
 `session.json`.
 
+### Models
+
+The model dropdown is read from `~/.codex/models_cache.json`, which Codex
+refreshes from your account's entitlements — so it lists exactly the models your
+subscription can use, and never goes stale. Models Codex marks as hidden are
+filtered out and deprecated ones are labelled. The second dropdown is the
+reasoning effort the selected model supports.
+
+MDVE defaults to the `model` and `model_reasoning_effort` in your
+`~/.codex/config.toml` and passes both explicitly on every run (`-m` and
+`-c model_reasoning_effort=…`), since the rest of that config is skipped.
+
 ## Visual editing model
 
 The Mermaid text is always the source of truth — there is no separate diagram
@@ -82,7 +94,7 @@ so rather than pretending.
 ## Adding another provider
 
 `server/src/providers/types.ts` defines the whole contract: `status()`,
-`models()`, and `run(opts, emit)` streaming `AgentEvent`s. Implement it, register
+`catalog()`, and `run(opts, emit)` streaming `AgentEvent`s. Implement it, register
 it in `server/src/index.ts`, and it appears in the chat provider dropdown. An
 API-key provider (Anthropic or OpenAI) is the natural second one; it would need
 its own `get_diagram` / `set_diagram` tools instead of the workspace-file trick,

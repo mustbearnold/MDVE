@@ -8,10 +8,21 @@ export interface SessionMeta {
   model?: string;
 }
 
+export interface ModelInfo {
+  id: string;
+  label: string;
+  efforts: string[];
+  defaultEffort?: string;
+  deprecated?: string;
+  contextWindow?: number;
+}
+
 export interface ProviderInfo {
   id: string;
   label: string;
-  models: string[];
+  models: ModelInfo[];
+  defaultModel?: string;
+  defaultEffort?: string;
   status: { ok: boolean; detail: string };
 }
 
@@ -99,7 +110,7 @@ async function* sse(body: ReadableStream<Uint8Array>): AsyncGenerator<{ event: s
 
 export async function streamChat(
   sessionId: string,
-  body: { prompt: string; providerId: string; model?: string; newThread?: boolean },
+  body: { prompt: string; providerId: string; model?: string; effort?: string; newThread?: boolean },
   handlers: { onAgent: (e: AgentEvent) => void; onDiagram: (source: string) => void },
   signal?: AbortSignal,
 ): Promise<void> {

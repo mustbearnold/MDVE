@@ -149,12 +149,8 @@ app.put('/api/sessions/:id/diagram', async (req, res) => {
 app.get('/api/providers', async (_req, res) => {
   const out = [];
   for (const provider of providers.values()) {
-    out.push({
-      id: provider.id,
-      label: provider.label,
-      models: provider.models(),
-      status: await provider.status(),
-    });
+    const [status, catalog] = await Promise.all([provider.status(), provider.catalog()]);
+    out.push({ id: provider.id, label: provider.label, status, ...catalog });
   }
   res.json({ providers: out });
 });
@@ -163,7 +159,7 @@ const running = new Map<string, AbortController>();
 
 app.post('/api/sessions/:id/chat', async (req, res) => {
   const { id } = req.params;
-  const { prompt, providerId = 'codex', model, newThread } = req.body ?? {};
+  const { prompt, providerId = 'codex', model, effort, newThread } = req.body ?? {};
 
   if (typeof prompt !== 'string' || prompt.trim() === '') {
     return res.status(400).json({ error: 'prompt is required' });
@@ -198,6 +194,7 @@ app.post('/api/sessions/:id/chat', async (req, res) => {
         workspace: sessionDir(id),
         threadId: newThread ? undefined : meta.threadId,
         model: model || undefined,
+        effort: effort || undefined,
         signal: controller.signal,
       },
       emit,

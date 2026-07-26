@@ -310,6 +310,11 @@ button.danger:hover {
   min-width: 0;
 }
 
+.chat-provider .effort-select {
+  flex: 0 0 auto;
+  max-width: 32%;
+}
+
 .chat-warning {
   margin: 6px 0 0;
   font-size: 12px;

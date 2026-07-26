@@ -12,13 +12,16 @@ export function ChatPanel(): JSX.Element {
   const providers = useStore((s) => s.providers);
   const providerId = useStore((s) => s.providerId);
   const model = useStore((s) => s.model);
+  const effort = useStore((s) => s.effort);
   const setProvider = useStore((s) => s.setProvider);
   const setModel = useStore((s) => s.setModel);
+  const setEffort = useStore((s) => s.setEffort);
 
   const [input, setInput] = useState('');
   const [showTrace, setShowTrace] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const provider = providers.find((p) => p.id === providerId);
+  const modelInfo = provider?.models.find((m) => m.id === model);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -38,7 +41,7 @@ export function ChatPanel(): JSX.Element {
     try {
       await streamChat(
         session.id,
-        { prompt, providerId, model: model || undefined },
+        { prompt, providerId, model: model || undefined, effort: effort || undefined },
         {
           onAgent: (event) => useStore.getState().applyAgentEvent(turnId, event),
           onDiagram: (source) => useStore.getState().setSource(source, { persist: false }),
@@ -67,10 +70,25 @@ export function ChatPanel(): JSX.Element {
             ))}
           </select>
           {provider && provider.models.length > 0 && (
-            <select value={model} onChange={(e) => setModel(e.target.value)}>
+            <select value={model} onChange={(e) => setModel(e.target.value)} title="Model">
               {provider.models.map((m) => (
-                <option key={m || 'default'} value={m}>
-                  {m || 'default model'}
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                  {m.deprecated ? ' (deprecated)' : ''}
+                </option>
+              ))}
+            </select>
+          )}
+          {modelInfo && modelInfo.efforts.length > 0 && (
+            <select
+              className="effort-select"
+              value={effort}
+              onChange={(e) => setEffort(e.target.value)}
+              title="Reasoning effort"
+            >
+              {modelInfo.efforts.map((e) => (
+                <option key={e} value={e}>
+                  {e}
                 </option>
               ))}
             </select>

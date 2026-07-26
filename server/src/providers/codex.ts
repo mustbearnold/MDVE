@@ -13,7 +13,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 
-import type { AgentEvent, Provider, RunOptions } from './types.js';
+import type { AgentEvent, ModelCatalog, ModelInfo, Provider, RunOptions } from './types.js';
 
 const CODEX_BIN = process.env.MDVE_CODEX_BIN ?? 'codex';
 const CODEX_HOME = process.env.CODEX_HOME ?? join(homedir(), '.codex');
@@ -21,11 +21,81 @@ const CODEX_HOME = process.env.CODEX_HOME ?? join(homedir(), '.codex');
 /**
  * User config is skipped by default: it pulls in the user's MCP servers,
  * skills and hooks, which slow every turn down and are irrelevant here.
- * Authentication still comes from CODEX_HOME/auth.json either way.
+ * Authentication still comes from CODEX_HOME/auth.json either way. Because the
+ * config is skipped, the model and reasoning effort it declares are read
+ * separately (see readConfigDefaults) and passed on the command line, so MDVE
+ * still honours the user's chosen model.
  */
 const IGNORE_USER_CONFIG = process.env.MDVE_CODEX_USER_CONFIG !== '1';
 
-const MODELS = ['', 'gpt-5.1-codex-max', 'gpt-5.1-codex', 'gpt-5.1', 'gpt-5-codex'];
+/** Used only when Codex has never written its model cache. */
+const FALLBACK_MODELS: ModelInfo[] = [
+  { id: 'gpt-5.6-sol', label: 'GPT-5.6-Sol', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+  { id: 'gpt-5.6-terra', label: 'GPT-5.6-Terra', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+  { id: 'gpt-5.6-luna', label: 'GPT-5.6-Luna', efforts: ['low', 'medium', 'high', 'xhigh'] },
+];
+
+interface CachedModel {
+  slug?: string;
+  display_name?: string;
+  visibility?: string;
+  priority?: number;
+  context_window?: number;
+  default_reasoning_level?: string;
+  supported_reasoning_levels?: { effort?: string }[];
+  upgrade?: { model?: string } | null;
+}
+
+/**
+ * Codex refreshes `models_cache.json` from the account's entitlements, so it is
+ * the only accurate source for which models this subscription can actually use.
+ */
+async function readModelCache(): Promise<ModelInfo[]> {
+  try {
+    const raw = JSON.parse(await readFile(join(CODEX_HOME, 'models_cache.json'), 'utf8')) as {
+      models?: CachedModel[];
+    };
+    const models = (raw.models ?? [])
+      .filter((m) => m.slug && m.visibility !== 'hide')
+      .sort((a, b) => (a.priority ?? 999) - (b.priority ?? 999))
+      .map<ModelInfo>((m) => ({
+        id: m.slug!,
+        label: m.display_name ?? m.slug!,
+        efforts: (m.supported_reasoning_levels ?? [])
+          .map((l) => l.effort)
+          .filter((e): e is string => Boolean(e)),
+        defaultEffort: m.default_reasoning_level,
+        deprecated: m.upgrade?.model ? `superseded by ${m.upgrade.model}` : undefined,
+        contextWindow: m.context_window,
+      }));
+    return models.length > 0 ? models : FALLBACK_MODELS;
+  } catch {
+    return FALLBACK_MODELS;
+  }
+}
+
+/**
+ * Minimal reader for the two top-level keys MDVE cares about. Only lines before
+ * the first `[table]` header are top level, which is all we want — profile and
+ * project overrides are out of scope here.
+ */
+async function readConfigDefaults(): Promise<{ model?: string; effort?: string }> {
+  try {
+    const text = await readFile(join(CODEX_HOME, 'config.toml'), 'utf8');
+    const out: { model?: string; effort?: string } = {};
+    for (const line of text.split('\n')) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('[')) break;
+      const m = /^model\s*=\s*"([^"]+)"/.exec(trimmed);
+      if (m) out.model = m[1];
+      const e = /^model_reasoning_effort\s*=\s*"([^"]+)"/.exec(trimmed);
+      if (e) out.effort = e[1];
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
 
 interface CodexItem {
   id?: string;
@@ -76,8 +146,14 @@ export class CodexProvider implements Provider {
   id = 'codex';
   label = 'Codex (ChatGPT subscription)';
 
-  models(): string[] {
-    return MODELS;
+  async catalog(): Promise<ModelCatalog> {
+    const [models, config] = await Promise.all([readModelCache(), readConfigDefaults()]);
+    const defaultModel = models.some((m) => m.id === config.model) ? config.model : models[0]?.id;
+    return {
+      models,
+      defaultModel,
+      defaultEffort: config.effort ?? models.find((m) => m.id === defaultModel)?.defaultEffort,
+    };
   }
 
   async status(): Promise<{ ok: boolean; detail: string }> {
@@ -110,7 +186,14 @@ export class CodexProvider implements Provider {
     }
     args.push('--json', '--skip-git-repo-check');
     if (IGNORE_USER_CONFIG) args.push('--ignore-user-config');
-    if (opts.model) args.push('-m', opts.model);
+
+    // With user config ignored, nothing else supplies the model or effort, so
+    // fall back to what config.toml declares rather than Codex's built-in default.
+    const defaults = await this.catalog();
+    const model = opts.model || defaults.defaultModel;
+    const effort = opts.effort || defaults.defaultEffort;
+    if (model) args.push('-m', model);
+    if (effort) args.push('-c', `model_reasoning_effort="${effort}"`);
     args.push('-');
 
     const child = spawn(CODEX_BIN, args, {

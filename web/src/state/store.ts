@@ -36,6 +36,7 @@ interface Store {
   providers: ProviderInfo[];
   providerId: string;
   model: string;
+  effort: string;
 
   setSource: (source: string, opts?: { history?: boolean; persist?: boolean }) => void;
   select: (selection: Selection) => void;
@@ -51,6 +52,7 @@ interface Store {
   loadProviders: () => Promise<void>;
   setProvider: (id: string) => void;
   setModel: (model: string) => void;
+  setEffort: (effort: string) => void;
 
   appendChat: (message: ChatMessage) => void;
   patchChat: (id: string, patch: Partial<ChatMessage>) => void;
@@ -86,6 +88,7 @@ export const useStore = create<Store>((set, get) => ({
   providers: [],
   providerId: 'codex',
   model: '',
+  effort: '',
 
   setSource: (source, opts = {}) => {
     const { source: previous, session } = get();
@@ -170,16 +173,40 @@ export const useStore = create<Store>((set, get) => ({
 
   loadProviders: async () => {
     const { providers } = await api.providers();
-    set((state) => ({
-      providers,
-      providerId: providers.some((p) => p.id === state.providerId)
+    set((state) => {
+      const providerId = providers.some((p) => p.id === state.providerId)
         ? state.providerId
-        : providers[0]?.id ?? 'codex',
-    }));
+        : providers[0]?.id ?? 'codex';
+      const provider = providers.find((p) => p.id === providerId);
+      const model = provider?.models.some((m) => m.id === state.model)
+        ? state.model
+        : provider?.defaultModel ?? '';
+      const modelInfo = provider?.models.find((m) => m.id === model);
+      const effort = modelInfo?.efforts.includes(state.effort)
+        ? state.effort
+        : provider?.defaultEffort ?? modelInfo?.defaultEffort ?? '';
+      return { providers, providerId, model, effort };
+    });
   },
 
-  setProvider: (providerId) => set({ providerId, model: '' }),
-  setModel: (model) => set({ model }),
+  setProvider: (providerId) => {
+    const provider = get().providers.find((p) => p.id === providerId);
+    const model = provider?.defaultModel ?? '';
+    const modelInfo = provider?.models.find((m) => m.id === model);
+    set({ providerId, model, effort: provider?.defaultEffort ?? modelInfo?.defaultEffort ?? '' });
+  },
+
+  setModel: (model) => {
+    const { providers, providerId, effort } = get();
+    const modelInfo = providers.find((p) => p.id === providerId)?.models.find((m) => m.id === model);
+    // Keep the current effort when the new model supports it, else fall back.
+    set({
+      model,
+      effort: modelInfo?.efforts.includes(effort) ? effort : modelInfo?.defaultEffort ?? '',
+    });
+  },
+
+  setEffort: (effort) => set({ effort }),
 
   appendChat: (message) => set((state) => ({ chat: [...state.chat, message] })),
 
