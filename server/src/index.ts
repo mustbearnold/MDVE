@@ -23,6 +23,7 @@ import {
   readMeta,
   sessionDir,
   sessionExists,
+  snapshotDiagram,
   updateMeta,
   writeDiagram,
 } from './sessions.js';
@@ -190,6 +191,7 @@ app.post('/api/sessions/:id/chat', async (req, res) => {
 
   try {
     await ensureAgentsFile(id);
+    await snapshotDiagram(id);
     await provider.run(
       {
         prompt,

@@ -44,8 +44,13 @@ Rules:
   rephrase instead (\`toolCall\`, \`finish\`).
 - Preserve existing node ids unless asked to rename them; the editor tracks
   selection by id.
-- Do not create other files, run builds, or install anything. This workspace has
-  no project in it — only the diagram.
+- \`${DIAGRAM_FILE}\` must contain a diagram and nothing else. Never park research
+  notes, prose or citations in it — a few \`%%\` comments are the limit.
+- You may create scratch files here (notes, research findings, drafts) when a
+  task genuinely needs them. Only \`${DIAGRAM_FILE}\` is rendered.
+- Do not run builds or install anything. There is no project here, and the
+  sandbox has no network access — local fetches will fail. Use your web search
+  tool instead, which runs outside the sandbox.
 - Reply with a one or two sentence summary of what you changed. Do not paste the
   whole diagram back; the user can already see it.
 `;
@@ -130,6 +135,22 @@ export async function listSessions(): Promise<SessionMeta[]> {
     if (meta) metas.push(meta);
   }
   return metas.sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+/**
+ * Copies the current diagram into `history/` before an agent turn. An agent
+ * asked to "replace the diagram" will do exactly that, and in-editor undo only
+ * survives while the tab is open.
+ */
+export async function snapshotDiagram(id: string): Promise<string | null> {
+  const source = await readDiagram(id);
+  if (source === null || source.trim() === '') return null;
+  const dir = join(sessionDir(id), 'history');
+  await mkdir(dir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const path = join(dir, `${stamp}.mmd`);
+  await writeFile(path, source, 'utf8');
+  return path;
 }
 
 export async function readDiagram(id: string): Promise<string | null> {
