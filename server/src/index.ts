@@ -16,6 +16,7 @@ import {
   DEFAULT_DIAGRAM,
   createSession,
   diagramPath,
+  ensureAgentsFile,
   ensureRoot,
   listSessions,
   readDiagram,
@@ -188,6 +189,7 @@ app.post('/api/sessions/:id/chat', async (req, res) => {
   req.on('close', () => controller.abort());
 
   try {
+    await ensureAgentsFile(id);
     await provider.run(
       {
         prompt,

@@ -37,6 +37,11 @@ Rules:
   since your last turn.
 - Keep the file valid Mermaid. If you are unsure a construct renders, prefer the
   plain flowchart syntax.
+- Never use a Mermaid keyword as a node id: \`call\`, \`end\`, \`class\`, \`classDef\`,
+  \`click\`, \`callback\`, \`href\`, \`style\`, \`linkStyle\`, \`graph\`, \`flowchart\`,
+  \`subgraph\`, \`direction\`, \`default\`, \`interpolate\`. The parser reports these as
+  an error on the *following* line, so they are hard to track down. Prefix or
+  rephrase instead (\`toolCall\`, \`finish\`).
 - Preserve existing node ids unless asked to rename them; the editor tracks
   selection by id.
 - Do not create other files, run builds, or install anything. This workspace has
@@ -87,12 +92,23 @@ export async function updateMeta(id: string, patch: Partial<SessionMeta>): Promi
   return next;
 }
 
+/** Keeps the agent brief current, including in sessions created by older builds. */
+export async function ensureAgentsFile(id: string): Promise<void> {
+  const path = join(sessionDir(id), 'AGENTS.md');
+  try {
+    if ((await readFile(path, 'utf8')) === AGENTS_MD) return;
+  } catch {
+    /* missing — write it */
+  }
+  await writeFile(path, AGENTS_MD, 'utf8');
+}
+
 export async function createSession(opts: { title?: string; source?: string } = {}): Promise<SessionMeta> {
   const id = randomUUID();
   const dir = sessionDir(id);
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, DIAGRAM_FILE), opts.source ?? DEFAULT_DIAGRAM, 'utf8');
-  await writeFile(join(dir, 'AGENTS.md'), AGENTS_MD, 'utf8');
+  await ensureAgentsFile(id);
   const now = Date.now();
   const meta: SessionMeta = {
     id,

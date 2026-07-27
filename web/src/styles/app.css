@@ -232,6 +232,17 @@ button.danger:hover {
   overflow: auto;
 }
 
+.preview-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #ffd08a;
+}
+
+.field-error {
+  font-size: 11px;
+  color: var(--danger);
+}
+
 .preview-error pre {
   margin: 6px 0 0;
   white-space: pre-wrap;

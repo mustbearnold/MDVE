@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import mermaid from 'mermaid';
 
+import { reservedIdsIn } from '../mermaid/parse';
 import { useStore } from '../state/store';
 
 mermaid.initialize({
@@ -57,6 +58,7 @@ export function Preview(): JSX.Element {
   const select = useStore((s) => s.select);
   const renderError = useStore((s) => s.renderError);
   const setRenderError = useStore((s) => s.setRenderError);
+  const reserved = useMemo(() => (renderError ? reservedIdsIn(source) : []), [renderError, source]);
 
   const hostRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -276,6 +278,15 @@ export function Preview(): JSX.Element {
       {renderError && (
         <div className="preview-error">
           <strong>Diagram error</strong>
+          {reserved.length > 0 && (
+            <p className="preview-hint">
+              {reserved.map((id) => `"${id}"`).join(', ')}{' '}
+              {reserved.length === 1
+                ? 'is a Mermaid keyword and cannot be used as a node id. Rename it'
+                : 'are Mermaid keywords and cannot be used as node ids. Rename them'}{' '}
+              — this is very likely the cause.
+            </p>
+          )}
           <pre>{renderError}</pre>
         </div>
       )}

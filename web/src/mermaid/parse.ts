@@ -125,6 +125,35 @@ export interface Diagram {
 const HEADER_RE = /^\s*(flowchart|graph)\s+(TB|TD|BT|RL|LR)?\s*$/i;
 const ID_RE = /^[A-Za-z0-9_][A-Za-z0-9_.-]*/;
 
+/**
+ * Words Mermaid's flowchart grammar tokenises as keywords. Using one as a node
+ * id produces a parse error pointing at the *next* token, which is a miserable
+ * thing to debug — `call` and `end` are the usual casualties.
+ */
+export const RESERVED_IDS = new Set([
+  'graph',
+  'flowchart',
+  'subgraph',
+  'end',
+  'class',
+  'classdef',
+  'click',
+  'call',
+  'callback',
+  'href',
+  'style',
+  'linkstyle',
+  'direction',
+  'default',
+  'interpolate',
+  'acctitle',
+  'accdescr',
+]);
+
+export function isReservedId(id: string): boolean {
+  return RESERVED_IDS.has(id.toLowerCase());
+}
+
 /** Arrow forms, longest first so `-->` is not read as `--`. */
 const ARROW_RES: RegExp[] = [
   /^<-{2,}>/, // <-->
@@ -390,6 +419,22 @@ export function serializeDiagram(lines: Line[]): string {
   return lines
     .map((line) => (line.kind === 'statement' ? serializeStatement(line) : line.raw))
     .join('\n');
+}
+
+/**
+ * Node ids in the source that collide with Mermaid keywords. Detected from the
+ * text rather than the parsed model, because such a diagram may fail to parse.
+ */
+export function reservedIdsIn(source: string): string[] {
+  const found = new Set<string>();
+  for (const raw of source.split('\n')) {
+    const line = raw.replace(/"[^"]*"/g, '""').replace(/%%.*$/, '');
+    if (/^\s*(subgraph|end|class|classDef|style|linkStyle|click|direction)\b/.test(line.trim())) continue;
+    for (const m of line.matchAll(/(^|[\s|>])([A-Za-z][A-Za-z0-9_.-]*)\s*(\[|\(|\{|>|-{2,}|={2,}|-\.)/g)) {
+      if (isReservedId(m[2])) found.add(m[2]);
+    }
+  }
+  return [...found];
 }
 
 export function shapeLabel(name: ShapeName): string {

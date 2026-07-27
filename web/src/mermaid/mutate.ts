@@ -11,6 +11,7 @@ import {
   NodeToken,
   ShapeName,
   StatementLine,
+  isReservedId,
   parseDiagram,
   serializeDiagram,
 } from './parse';
@@ -112,6 +113,7 @@ export function setNodeShape(source: string, id: string, shape: ShapeName): stri
 
 export function renameNodeId(source: string, oldId: string, newId: string): string {
   if (!/^[A-Za-z0-9_][A-Za-z0-9_.-]*$/.test(newId)) return source;
+  if (isReservedId(newId)) return source;
   const diagram = parseDiagram(source);
   if (diagram.nodes.some((n) => n.id === newId)) return source;
   const lines = cloneLines(diagram);
@@ -131,7 +133,7 @@ export function addNode(
   const diagram = parseDiagram(source);
   const existing = new Set(diagram.nodes.map((n) => n.id));
   let id = opts.id;
-  if (!id || existing.has(id)) {
+  if (!id || existing.has(id) || isReservedId(id)) {
     let n = diagram.nodes.length + 1;
     do {
       id = `n${n++}`;

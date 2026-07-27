@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { SHAPES, ShapeName } from '../mermaid/parse';
+import { SHAPES, ShapeName, isReservedId } from '../mermaid/parse';
 import {
   addEdge,
   deleteEdge,
@@ -37,6 +37,8 @@ export function Inspector(): JSX.Element {
 
   useEffect(() => setIdDraft(node?.id ?? ''), [node?.id]);
 
+  const idReserved = idDraft.trim() !== '' && isReservedId(idDraft.trim());
+
   if (diagram.unsupported) {
     return (
       <aside className="inspector">
@@ -67,7 +69,7 @@ export function Inspector(): JSX.Element {
           <div className="row">
             <input value={idDraft} onChange={(e) => setIdDraft(e.target.value)} />
             <button
-              disabled={idDraft === node.id || idDraft.trim() === ''}
+              disabled={idDraft === node.id || idDraft.trim() === '' || idReserved}
               onClick={() => {
                 setSource(renameNodeId(source, node.id, idDraft.trim()));
                 select({ kind: 'node', id: idDraft.trim() });
@@ -76,6 +78,7 @@ export function Inspector(): JSX.Element {
               Rename
             </button>
           </div>
+          {idReserved && <span className="field-error">“{idDraft.trim()}” is a Mermaid keyword</span>}
         </label>
 
         <label>
