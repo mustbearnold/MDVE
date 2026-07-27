@@ -107,10 +107,16 @@ button.danger:hover {
 
 .layout {
   display: grid;
-  grid-template-columns: minmax(260px, 24%) 1fr minmax(320px, 26%);
+  /*
+   * minmax(0, …) on every track: fixed minimums that add up to more than the
+   * window make grid overflow rather than shrink, and the preview — the only
+   * track without a floor — is the one that collapses to nothing.
+   */
+  grid-template-columns: minmax(0, 24%) minmax(0, 1fr) minmax(0, 26%);
   flex: 1;
   min-height: 0;
 }
+
 
 .pane {
   min-width: 0;
@@ -427,4 +433,40 @@ button.danger:hover {
 
 .trace-toggle input {
   width: auto;
+}
+
+/* ------------------------------------------------------------------- *
+ * Narrow windows
+ *
+ * Must stay last in the file: these override `.pane { min-height: 0 }`
+ * and friends at equal specificity.
+ * ------------------------------------------------------------------- */
+
+@media (max-width: 1100px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+    overflow-y: auto;
+  }
+
+  .pane {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .pane-preview {
+    order: -1;
+    min-height: 60vh;
+  }
+
+  .pane-code {
+    min-height: 40vh;
+  }
+
+  .pane-side {
+    min-height: 75vh;
+  }
+
+  .inspector {
+    max-height: none;
+  }
 }

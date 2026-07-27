@@ -179,6 +179,19 @@ function matchArrow(s: string): string | null {
   return null;
 }
 
+/**
+ * The mid-arrow label form: `A -- text --> B`, `A == text ==> B`,
+ * `A -. text .-> B`. The opener alone is not a valid arrow, so this has to be
+ * tried before matchArrow rather than after it.
+ */
+const MID_LABEL_RE = /^(--|==|-\.)\s+([^|\n]+?)\s+(-{2,}>|-{2,}|={2,}>|={2,}|\.-+>|\.-+)/;
+
+/** The canonical arrow a mid-label link is equivalent to. */
+function midArrow(closer: string): string {
+  if (closer.startsWith('.')) return closer.endsWith('>') ? '-.->' : '-.-';
+  return closer;
+}
+
 /** Reads a `"quoted"` or bare label terminated by `close`. */
 function readLabel(s: string, from: number, close: string): { label: string; end: number; quoted: boolean } | null {
   if (s[from] === '"') {
@@ -258,27 +271,28 @@ function parseStatement(raw: string, index: number): StatementLine | null {
     skipWs();
     if (pos >= content.length) break;
 
-    const arrow = matchArrow(content.slice(pos));
-    if (!arrow) return null; // Unrecognised syntax — keep the line opaque.
-    pos += arrow.length;
-
+    let arrow: string;
     let label: string | undefined;
     let labelStyle: LinkToken['labelStyle'];
 
-    if (content[pos] === '|') {
-      const end = content.indexOf('|', pos + 1);
-      if (end === -1) return null;
-      label = content.slice(pos + 1, end).replace(/^"|"$/g, '');
-      labelStyle = 'pipe';
-      pos = end + 1;
+    const mid = MID_LABEL_RE.exec(content.slice(pos));
+    if (mid) {
+      arrow = midArrow(mid[3]);
+      label = mid[2].trim();
+      labelStyle = 'mid';
+      pos += mid[0].length;
     } else {
-      // Mid-arrow label form: `A -- text --> B`.
-      const rest = content.slice(pos);
-      const mid = /^\s*([^->=|\n]+?)\s*(-{2,}>|-{2,}|={2,}>|={2,}|\.-+>|-\.-+>)/.exec(rest);
-      if (mid && !/^\s*$/.test(mid[1])) {
-        label = mid[1].trim();
-        labelStyle = 'mid';
-        pos += mid[0].length;
+      const matched = matchArrow(content.slice(pos));
+      if (!matched) return null; // Unrecognised syntax — keep the line opaque.
+      arrow = matched;
+      pos += arrow.length;
+
+      if (content[pos] === '|') {
+        const end = content.indexOf('|', pos + 1);
+        if (end === -1) return null;
+        label = content.slice(pos + 1, end).replace(/^"|"$/g, '');
+        labelStyle = 'pipe';
+        pos = end + 1;
       }
     }
 

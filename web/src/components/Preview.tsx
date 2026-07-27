@@ -77,6 +77,13 @@ export function Preview(): JSX.Element {
     const canvas = canvasRef.current;
     if (!size || !canvas) return;
     const box = canvas.getBoundingClientRect();
+    // A collapsed or not-yet-laid-out pane would otherwise pin the zoom at the
+    // floor and look like a broken render.
+    if (box.width < 80 || box.height < 80) return;
+    // Centring reads canvasSize, which only ever comes from the ResizeObserver.
+    // Seed it from the measurement we already have so a fit is never applied
+    // against a stale zero and thrown off-screen.
+    setCanvasSize({ width: box.width, height: box.height });
     const scale = Math.min(1, (box.width - 48) / size.width, (box.height - 48) / size.height);
     setView({ x: 0, y: 0, scale: Math.max(0.05, scale) });
   }, []);
