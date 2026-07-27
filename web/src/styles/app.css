@@ -175,21 +175,31 @@ button.danger:hover {
 }
 
 .preview-canvas {
+  position: relative;
   height: 100%;
   width: 100%;
   overflow: hidden;
   cursor: grab;
-  display: grid;
-  place-items: center;
 }
 
 .preview-canvas:active {
   cursor: grabbing;
 }
 
+/*
+ * Absolute centring, not grid centring: a diagram larger than the pane
+ * overflows a centred grid item unpredictably and ends up off-screen.
+ */
 .preview-stage {
-  transform-origin: center center;
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
   transition: transform 60ms linear;
+}
+
+.preview-svg svg {
+  display: block;
 }
 
 .preview-svg g.node {

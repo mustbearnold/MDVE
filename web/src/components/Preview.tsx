@@ -59,8 +59,30 @@ export function Preview(): JSX.Element {
   const setRenderError = useStore((s) => s.setRenderError);
 
   const hostRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
+  /** Pan is an offset from centred; the centring itself is computed below. */
   const [view, setView] = useState({ x: 0, y: 0, scale: 1 });
   const dragRef = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null);
+  /** Intrinsic size of the last render. */
+  const [content, setContent] = useState({ width: 0, height: 0 });
+  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
+  const fitRef = useRef<{ width: number; height: number } | null>(null);
+  /** Once the user zooms or pans, stop refitting on every edit. */
+  const manualViewRef = useRef(false);
+
+  const fitToView = useCallback(() => {
+    const size = fitRef.current;
+    const canvas = canvasRef.current;
+    if (!size || !canvas) return;
+    const box = canvas.getBoundingClientRect();
+    const scale = Math.min(1, (box.width - 48) / size.width, (box.height - 48) / size.height);
+    setView({ x: 0, y: 0, scale: Math.max(0.05, scale) });
+  }, []);
+
+  const zoomBy = useCallback((factor: number) => {
+    manualViewRef.current = true;
+    setView((v) => ({ ...v, scale: Math.min(4, Math.max(0.05, v.scale * factor)) }));
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -78,9 +100,17 @@ export function Preview(): JSX.Element {
         hostRef.current.innerHTML = svg;
         const el = hostRef.current.querySelector('svg');
         if (el) {
-          el.removeAttribute('width');
-          el.style.maxWidth = 'none';
-          el.style.height = 'auto';
+          // Mermaid sizes the svg with `max-width`, which fights our own zoom
+          // transform. Pin it to its intrinsic viewBox size instead — dropping
+          // the width outright collapses the element to zero in a flex parent.
+          const vb = el.viewBox.baseVal;
+          if (vb && vb.width > 0) {
+            el.style.maxWidth = 'none';
+            el.style.width = `${vb.width}px`;
+            el.style.height = `${vb.height}px`;
+            fitRef.current = { width: vb.width, height: vb.height };
+            setContent({ width: vb.width, height: vb.height });
+          }
         }
         // Rendered links are 1–2px wide, which is a miserable click target.
         // Shadow each one with a fat transparent path that takes the clicks.
@@ -95,6 +125,7 @@ export function Preview(): JSX.Element {
           hit.id = `hit-${path.id}`;
           path.parentElement?.insertBefore(hit, path);
         });
+        if (!manualViewRef.current) fitToView();
         setRenderError(null);
       } catch (err) {
         if (cancelled) return;
@@ -107,7 +138,20 @@ export function Preview(): JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [source, setRenderError]);
+  }, [source, setRenderError, fitToView]);
+
+  // Refit when the pane itself changes size.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const observer = new ResizeObserver(([entry]) => {
+      const box = entry.contentRect;
+      setCanvasSize({ width: box.width, height: box.height });
+      if (!manualViewRef.current) fitToView();
+    });
+    observer.observe(canvas);
+    return () => observer.disconnect();
+  }, [fitToView]);
 
   // Selection highlight, re-applied after every render.
   useLayoutEffect(() => {
@@ -159,14 +203,14 @@ export function Preview(): JSX.Element {
     [diagram, select],
   );
 
-  const onWheel = useCallback((event: React.WheelEvent) => {
-    if (!event.ctrlKey && !event.metaKey && Math.abs(event.deltaY) < 2) return;
-    event.preventDefault();
-    setView((v) => {
-      const scale = Math.min(4, Math.max(0.2, v.scale * (event.deltaY < 0 ? 1.1 : 1 / 1.1)));
-      return { ...v, scale };
-    });
-  }, []);
+  const onWheel = useCallback(
+    (event: React.WheelEvent) => {
+      if (!event.ctrlKey && !event.metaKey && Math.abs(event.deltaY) < 2) return;
+      event.preventDefault();
+      zoomBy(event.deltaY < 0 ? 1.1 : 1 / 1.1);
+    },
+    [zoomBy],
+  );
 
   const onPointerDown = (event: React.PointerEvent) => {
     if (event.button !== 0 || (event.target as Element).closest('g.node')) return;
@@ -177,6 +221,7 @@ export function Preview(): JSX.Element {
   const onPointerMove = (event: React.PointerEvent) => {
     const drag = dragRef.current;
     if (!drag) return;
+    manualViewRef.current = true;
     setView((v) => ({ ...v, x: drag.ox + (event.clientX - drag.x), y: drag.oy + (event.clientY - drag.y) }));
   };
 
@@ -184,16 +229,27 @@ export function Preview(): JSX.Element {
     dragRef.current = null;
   };
 
+  // Centre the scaled diagram in the pane, then apply the user's pan.
+  const offsetX = (canvasSize.width - content.width * view.scale) / 2 + view.x;
+  const offsetY = (canvasSize.height - content.height * view.scale) / 2 + view.y;
+  const stageTransform = `translate(${offsetX}px, ${offsetY}px) scale(${view.scale})`;
+
   return (
     <div className="preview">
       <div className="preview-tools">
-        <button onClick={() => setView((v) => ({ ...v, scale: Math.min(4, v.scale * 1.2) }))} title="Zoom in">
+        <button onClick={() => zoomBy(1.2)} title="Zoom in">
           +
         </button>
-        <button onClick={() => setView((v) => ({ ...v, scale: Math.max(0.2, v.scale / 1.2) }))} title="Zoom out">
+        <button onClick={() => zoomBy(1 / 1.2)} title="Zoom out">
           −
         </button>
-        <button onClick={() => setView({ x: 0, y: 0, scale: 1 })} title="Reset view">
+        <button
+          onClick={() => {
+            manualViewRef.current = false;
+            fitToView();
+          }}
+          title="Fit to view"
+        >
           ⤢
         </button>
         <span className="zoom-label">{Math.round(view.scale * 100)}%</span>
@@ -201,6 +257,7 @@ export function Preview(): JSX.Element {
 
       <div
         className="preview-canvas"
+        ref={canvasRef}
         onClick={onClick}
         onWheel={onWheel}
         onPointerDown={onPointerDown}
@@ -210,7 +267,7 @@ export function Preview(): JSX.Element {
       >
         <div
           className="preview-stage"
-          style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})` }}
+          style={{ transform: stageTransform }}
         >
           <div ref={hostRef} className="preview-svg" />
         </div>
