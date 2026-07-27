@@ -178,9 +178,11 @@ export class CodexProvider implements Provider {
   async run(opts: RunOptions, emit: (event: AgentEvent) => void): Promise<void> {
     const args: string[] = ['exec'];
     if (opts.threadId) {
-      // `resume` inherits sandbox policy and cwd from the recorded session, and
-      // rejects -s / -C outright.
-      args.push('resume', opts.threadId);
+      // `resume` rejects -s / -C, and does NOT inherit the sandbox policy of
+      // the session it resumes — it falls back to read-only, which leaves the
+      // agent unable to edit the diagram on any turn after the first. The
+      // config override is the only way to set it here. cwd comes from spawn().
+      args.push('resume', opts.threadId, '-c', 'sandbox_mode="workspace-write"');
     } else {
       args.push('-s', 'workspace-write', '-C', opts.workspace);
     }
