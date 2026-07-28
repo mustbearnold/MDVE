@@ -5,7 +5,7 @@
   --surface-3: #182231;
   --surface-selected: #16253a;
   --border-subtle: #263242;
-  --border-strong: #3c4c60;
+  --border-strong: #55677c;
   --text-primary: #edf2f7;
   --text-secondary: #b7c2cf;
   --text-muted: #8f9dad;
@@ -65,7 +65,7 @@ textarea {
   min-height: var(--control-height);
   color: var(--text-primary);
   background: var(--surface-1);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
 }
 
@@ -89,7 +89,7 @@ button {
 button:hover:not(:disabled),
 .toolbar-menu summary:hover {
   background: #1d2a3b;
-  border-color: var(--border-strong);
+  border-color: var(--accent);
 }
 
 button:active:not(:disabled) {
@@ -115,7 +115,7 @@ summary:focus-visible,
 button.danger {
   color: var(--danger);
   background: transparent;
-  border-color: #6d3434;
+  border-color: var(--danger);
 }
 
 button.danger:hover:not(:disabled) {
@@ -273,7 +273,7 @@ button.danger:hover:not(:disabled) {
   padding: 3px 8px;
   color: var(--danger);
   background: var(--danger-surface);
-  border-color: #6d3434;
+  border-color: var(--danger);
 }
 
 .toolbar-group {
@@ -310,7 +310,7 @@ button.danger:hover:not(:disabled) {
   padding: 6px 10px;
   color: var(--text-primary);
   background: var(--surface-3);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   cursor: pointer;
   list-style: none;
