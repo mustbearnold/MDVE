@@ -6,14 +6,14 @@ import { CodePane } from './components/CodePane';
 import { Inspector } from './components/Inspector';
 import { Preview } from './components/Preview';
 import { Toolbar } from './components/Toolbar';
-import { WorkspaceTabs, type WorkspaceView } from './components/WorkspaceTabs';
+import { WorkbenchTabs, type WorkbenchView } from './components/WorkbenchTabs';
 import { useStore } from './state/store';
 
 export function App(): JSX.Element {
   const session = useStore((s) => s.session);
   const loadSession = useStore((s) => s.loadSession);
   const loadProviders = useStore((s) => s.loadProviders);
-  const [activeView, setActiveView] = useState<WorkspaceView>('preview');
+  const [activeView, setActiveView] = useState<WorkbenchView>('preview');
 
   useEffect(() => {
     void loadSession(localStorage.getItem('mdve.session') ?? undefined).catch(() => void loadSession());
@@ -52,15 +52,15 @@ export function App(): JSX.Element {
 
   return (
     <div className="app">
-      <a className="skip-link" href="#workspace-main">
-        Skip to workspace
+      <a className="skip-link" href="#workbench-main">
+        Skip to workbench
       </a>
       <Toolbar />
-      <WorkspaceTabs activeView={activeView} onChange={setActiveView} />
-      <main className="layout" id="workspace-main">
+      <WorkbenchTabs activeView={activeView} onChange={setActiveView} />
+      <main className="layout" id="workbench-main">
         <section
           className={`pane pane-code${activeView === 'source' ? ' pane-active' : ''}`}
-          id="workspace-source"
+          id="workbench-source"
           aria-labelledby="source-heading"
         >
           <header className="pane-header">
@@ -71,7 +71,7 @@ export function App(): JSX.Element {
         </section>
         <section
           className={`pane pane-preview${activeView === 'preview' ? ' pane-active' : ''}`}
-          id="workspace-preview"
+          id="workbench-preview"
           aria-labelledby="preview-heading"
         >
           <header className="pane-header">
@@ -85,13 +85,13 @@ export function App(): JSX.Element {
         >
           <div
             className={`side-view side-inspector${activeView === 'inspector' ? ' side-view-active' : ''}`}
-            id="workspace-inspector"
+            id="workbench-inspector"
           >
             <Inspector />
           </div>
           <div
             className={`side-view side-agent${activeView === 'agent' ? ' side-view-active' : ''}`}
-            id="workspace-agent"
+            id="workbench-agent"
           >
             <ChatPanel />
           </div>

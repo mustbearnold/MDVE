@@ -1,6 +1,6 @@
 # Responsive UI workbench de-slop
 
-MDVE is a local React creation workspace for software engineers and technical
+MDVE is a local React creation workbench for software engineers and technical
 founders. Its winning job is turning fuzzy technical reasoning or an existing
 Mermaid file into a correct, durable, version-control-ready technical
 flowchart.
@@ -21,7 +21,7 @@ inspection stay legible, and the agent remains powerful but subordinate.
   because it communicates diagram space; decorative gradients, glass, glow,
   shadows, and card soup are excluded.
 - Desktop remains a three-column workbench. Narrow layouts expose Preview,
-  Source, Inspector, and Agent as explicit workspace views rather than stacking
+  Source, Inspector, and Agent as explicit workbench views rather than stacking
   squeezed desktop panes.
 - Preserve all editing, selection, persistence, import/export, inspector, and
   agent capabilities.
@@ -30,7 +30,7 @@ inspection stay legible, and the agent remains powerful but subordinate.
 
 At 390 by 844 on master `a64346d`, the document and toolbar are 750 pixels wide,
 the Diagram selector is 493 pixels wide, and core controls are 27 to 33 pixels
-tall. There is no narrow-layout workspace switcher, no page heading, no Preview
+tall. There is no narrow-layout workbench switcher, no page heading, no Preview
 or Agent heading, and no consistent visible focus treatment.
 
 The implementation is evaluated against WCAG 2.2, the USWDS design principles,

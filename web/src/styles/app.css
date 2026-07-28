@@ -371,7 +371,7 @@ button.danger:hover:not(:disabled) {
 
 /* Workspace ---------------------------------------------------------- */
 
-.workspace-tabs {
+.workbench-tabs {
   display: none;
 }
 
@@ -830,7 +830,7 @@ button.danger:hover:not(:disabled) {
     display: none;
   }
 
-  .workspace-tabs {
+  .workbench-tabs {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 0;
@@ -839,7 +839,7 @@ button.danger:hover:not(:disabled) {
     border-bottom: 1px solid var(--border-subtle);
   }
 
-  .workspace-tabs button {
+  .workbench-tabs button {
     position: relative;
     min-width: 0;
     background: transparent;
@@ -848,11 +848,11 @@ button.danger:hover:not(:disabled) {
     color: var(--text-secondary);
   }
 
-  .workspace-tabs button[aria-pressed='true'] {
+  .workbench-tabs button[aria-pressed='true'] {
     color: var(--text-primary);
   }
 
-  .workspace-tabs button[aria-pressed='true']::after {
+  .workbench-tabs button[aria-pressed='true']::after {
     position: absolute;
     right: var(--space-2);
     bottom: 0;
@@ -954,11 +954,11 @@ button.danger:hover:not(:disabled) {
     min-height: 44px;
   }
 
-  .workspace-tabs {
+  .workbench-tabs {
     padding: 0;
   }
 
-  .workspace-tabs button {
+  .workbench-tabs button {
     min-height: 44px;
     padding: 6px 4px;
     font-size: 12px;

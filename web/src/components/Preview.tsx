@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import mermaid from 'mermaid';
 
-import { reservedIdsIn } from '../mermaid/parse';
-import { useStore } from '../state/store';
+import { reservedIdsIn, type Diagram } from '../mermaid/parse';
+import { useStore, type Selection } from '../state/store';
 import { Icon } from './Icon';
 
 mermaid.initialize({
@@ -52,6 +52,23 @@ function edgeEndsOf(el: Element, knownIds: Set<string>): { from: string; to: str
   return null;
 }
 
+function selectionForTarget(
+  target: Element,
+  diagram: Diagram,
+  knownNodeIds: Set<string>,
+): Exclude<Selection, { kind: 'none' }> | null {
+  const node = target.closest('g.node');
+  if (node) {
+    const id = nodeIdOf(node);
+    return id ? { kind: 'node', id } : null;
+  }
+
+  const edgeElement = target.closest('.edgePaths path, .flowchart-link');
+  const ends = edgeElement && edgeEndsOf(edgeElement, knownNodeIds);
+  const edge = ends && diagram.edges.find((candidate) => candidate.from === ends.from && candidate.to === ends.to);
+  return edge ? { kind: 'edge', key: edge.key } : null;
+}
+
 export function Preview(): JSX.Element {
   const source = useStore((s) => s.source);
   const selection = useStore((s) => s.selection);
@@ -60,6 +77,7 @@ export function Preview(): JSX.Element {
   const renderError = useStore((s) => s.renderError);
   const setRenderError = useStore((s) => s.setRenderError);
   const reserved = useMemo(() => (renderError ? reservedIdsIn(source) : []), [renderError, source]);
+  const knownNodeIds = useMemo(() => new Set(diagram.nodes.map((node) => node.id)), [diagram.nodes]);
 
   const hostRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -147,7 +165,7 @@ export function Preview(): JSX.Element {
           hit.removeAttribute('marker-end');
           hit.removeAttribute('style');
           hit.id = `hit-${path.id}`;
-          const ends = edgeEndsOf(path, new Set(diagram.nodes.map((node) => node.id)));
+          const ends = edgeEndsOf(path, knownNodeIds);
           if (ends) {
             hit.setAttribute('role', 'button');
             hit.setAttribute('tabindex', '0');
@@ -168,7 +186,7 @@ export function Preview(): JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [source, diagram, setRenderError, fitToView]);
+  }, [source, diagram, knownNodeIds, setRenderError, fitToView]);
 
   // Refit when the pane itself changes size.
   useEffect(() => {
@@ -196,41 +214,20 @@ export function Preview(): JSX.Element {
     } else if (selection.kind === 'edge') {
       const edge = diagram.edges.find((e) => e.key === selection.key);
       if (edge) {
-        const knownIds = new Set(diagram.nodes.map((n) => n.id));
         host.querySelectorAll('.edgePaths path:not(.mdve-hit)').forEach((el) => {
-          const ends = edgeEndsOf(el, knownIds);
+          const ends = edgeEndsOf(el, knownNodeIds);
           if (ends && ends.from === edge.from && ends.to === edge.to) el.classList.add('mdve-selected');
         });
       }
     }
-  }, [selection, source, diagram]);
+  }, [selection, source, diagram, knownNodeIds]);
 
   const onClick = useCallback(
     (event: React.MouseEvent) => {
       const target = event.target as Element;
-      const node = target.closest('g.node');
-      if (node) {
-        const id = nodeIdOf(node);
-        if (id) {
-          select({ kind: 'node', id });
-          return;
-        }
-      }
-      const edgeEl = target.closest('.edgePaths path, .flowchart-link');
-      if (edgeEl) {
-        const knownIds = new Set(diagram.nodes.map((n) => n.id));
-        const ends = edgeEndsOf(edgeEl, knownIds);
-        if (ends) {
-          const edge = diagram.edges.find((e) => e.from === ends.from && e.to === ends.to);
-          if (edge) {
-            select({ kind: 'edge', key: edge.key });
-            return;
-          }
-        }
-      }
-      select({ kind: 'none' });
+      select(selectionForTarget(target, diagram, knownNodeIds) ?? { kind: 'none' });
     },
-    [diagram, select],
+    [diagram, knownNodeIds, select],
   );
 
   const onWheel = useCallback(
@@ -246,26 +243,12 @@ export function Preview(): JSX.Element {
     (event: React.KeyboardEvent) => {
       if (event.key !== 'Enter' && event.key !== ' ') return;
       const target = event.target as Element;
-      const node = target.closest('g.node');
-      if (node) {
-        const id = nodeIdOf(node);
-        if (id) {
-          event.preventDefault();
-          select({ kind: 'node', id });
-        }
-        return;
-      }
-      const link = target.closest('path.mdve-hit');
-      if (!link) return;
-      const knownIds = new Set(diagram.nodes.map((candidate) => candidate.id));
-      const ends = edgeEndsOf(link, knownIds);
-      const edge = ends && diagram.edges.find((candidate) => candidate.from === ends.from && candidate.to === ends.to);
-      if (edge) {
-        event.preventDefault();
-        select({ kind: 'edge', key: edge.key });
-      }
+      const nextSelection = selectionForTarget(target, diagram, knownNodeIds);
+      if (!nextSelection) return;
+      event.preventDefault();
+      select(nextSelection);
     },
-    [diagram, select],
+    [diagram, knownNodeIds, select],
   );
 
   const onPointerDown = (event: React.PointerEvent) => {
