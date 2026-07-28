@@ -2,6 +2,7 @@ import { create } from 'zustand';
 
 import { AgentEvent, ProviderInfo, SessionMeta, api } from '../api';
 import { Diagram, parseDiagram } from '../mermaid/parse';
+import { createDiagramPersistence, type SaveStatus } from './persistence';
 
 export type Selection =
   | { kind: 'none' }
@@ -27,6 +28,7 @@ interface Store {
   diagram: Diagram;
   selection: Selection;
   renderError: string | null;
+  saveStatus: SaveStatus;
 
   past: string[];
   future: string[];
@@ -43,6 +45,7 @@ interface Store {
   setRenderError: (error: string | null) => void;
   undo: () => void;
   redo: () => void;
+  retrySave: () => void;
 
   loadSession: (id?: string) => Promise<void>;
   refreshSessions: () => Promise<void>;
@@ -61,13 +64,15 @@ interface Store {
 }
 
 const HISTORY_LIMIT = 200;
-let saveTimer: ReturnType<typeof setTimeout> | undefined;
+let diagramPersistence: ReturnType<typeof createDiagramPersistence>;
 
-function persist(sessionId: string, source: string): void {
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    void api.saveDiagram(sessionId, source).catch(() => undefined);
-  }, 250);
+async function flushDiagramBeforeNavigation(diagram: SessionMeta | null): Promise<void> {
+  if (!diagram) return;
+  await diagramPersistence.flush(diagram.id);
+  const saveStatus = diagramPersistence.status(diagram.id);
+  if (saveStatus.state === 'error') {
+    throw new Error(`Could not save ${diagram.title}: ${saveStatus.message}`);
+  }
 }
 
 export const useStore = create<Store>((set, get) => ({
@@ -79,6 +84,7 @@ export const useStore = create<Store>((set, get) => ({
   diagram: parseDiagram(''),
   selection: { kind: 'none' },
   renderError: null,
+  saveStatus: { state: 'saved' },
 
   past: [],
   future: [],
@@ -100,7 +106,7 @@ export const useStore = create<Store>((set, get) => ({
       past: history ? [...state.past, previous].slice(-HISTORY_LIMIT) : state.past,
       future: history ? [] : state.future,
     }));
-    if (opts.persist !== false && session) persist(session.id, source);
+    if (opts.persist !== false && session) diagramPersistence.schedule(session.id, source);
   },
 
   select: (selection) => set({ selection }),
@@ -116,7 +122,7 @@ export const useStore = create<Store>((set, get) => ({
       past: past.slice(0, -1),
       future: [source, ...future].slice(0, HISTORY_LIMIT),
     });
-    if (session) persist(session.id, previous);
+    if (session) diagramPersistence.schedule(session.id, previous);
   },
 
   redo: () => {
@@ -129,10 +135,17 @@ export const useStore = create<Store>((set, get) => ({
       past: [...past, source].slice(-HISTORY_LIMIT),
       future: future.slice(1),
     });
-    if (session) persist(session.id, next);
+    if (session) diagramPersistence.schedule(session.id, next);
+  },
+
+  retrySave: () => {
+    const { session } = get();
+    if (session) void diagramPersistence.retry(session.id);
   },
 
   loadSession: async (id) => {
+    await flushDiagramBeforeNavigation(get().session);
+
     let targetId = id;
     if (!targetId) {
       const { sessions } = await api.listSessions();
@@ -148,6 +161,7 @@ export const useStore = create<Store>((set, get) => ({
       future: [],
       selection: { kind: 'none' },
       chat: [],
+      saveStatus: diagramPersistence.status(session.id),
     });
     localStorage.setItem('mdve.session', session.id);
     await get().refreshSessions();
@@ -159,6 +173,7 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   newSession: async () => {
+    await flushDiagramBeforeNavigation(get().session);
     const { session } = await api.createSession();
     await get().loadSession(session.id);
   },
@@ -250,3 +265,9 @@ export const useStore = create<Store>((set, get) => ({
 
   setBusy: (busy) => set({ busy }),
 }));
+
+diagramPersistence = createDiagramPersistence(api.saveDiagram, {
+  onStatus: (sessionId, saveStatus) => {
+    if (useStore.getState().session?.id === sessionId) useStore.setState({ saveStatus });
+  },
+});

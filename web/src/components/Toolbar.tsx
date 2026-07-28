@@ -2,6 +2,7 @@ import { useRef } from 'react';
 
 import { addNode } from '../mermaid/mutate';
 import { setDirection } from '../mermaid/mutate';
+import { supportsStructuredEditing } from '../mermaid/parse';
 import { useStore } from '../state/store';
 
 const DIRECTIONS = ['TD', 'LR', 'BT', 'RL'];
@@ -20,6 +21,7 @@ export function Toolbar(): JSX.Element {
   const setSource = useStore((s) => s.setSource);
   const select = useStore((s) => s.select);
   const diagram = useStore((s) => s.diagram);
+  const renderError = useStore((s) => s.renderError);
   const session = useStore((s) => s.session);
   const sessions = useStore((s) => s.sessions);
   const loadSession = useStore((s) => s.loadSession);
@@ -29,7 +31,10 @@ export function Toolbar(): JSX.Element {
   const redo = useStore((s) => s.redo);
   const past = useStore((s) => s.past);
   const future = useStore((s) => s.future);
+  const saveStatus = useStore((s) => s.saveStatus);
+  const retrySave = useStore((s) => s.retrySave);
   const fileRef = useRef<HTMLInputElement>(null);
+  const structuredEditingAvailable = supportsStructuredEditing(diagram, renderError);
 
   const exportSvg = () => {
     const svg = document.querySelector('.preview-svg svg');
@@ -96,21 +101,34 @@ export function Toolbar(): JSX.Element {
         >
           Rename
         </button>
+        <span className={`save-status save-${saveStatus.state}`} aria-live="polite">
+          {saveStatus.state === 'error' ? (
+            <button className="save-retry" onClick={retrySave} title={saveStatus.message}>
+              Save failed · Retry
+            </button>
+          ) : saveStatus.state === 'saving' ? (
+            'Saving…'
+          ) : (
+            'Saved'
+          )}
+        </span>
       </div>
 
       <div className="toolbar-group">
         <button
+          disabled={!structuredEditingAvailable}
+          title={!structuredEditingAvailable ? 'Structured editing requires a valid flowchart / graph diagram' : undefined}
           onClick={() => {
             const { source: next, id } = addNode(source);
             setSource(next);
-            select({ kind: 'node', id });
+            if (id) select({ kind: 'node', id });
           }}
         >
           + Node
         </button>
         <select
           value={diagram.direction}
-          disabled={diagram.unsupported}
+          disabled={!structuredEditingAvailable}
           onChange={(e) => setSource(setDirection(source, e.target.value))}
           title="Layout direction"
         >

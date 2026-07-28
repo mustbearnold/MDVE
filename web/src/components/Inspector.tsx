@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 
-import { SHAPES, ShapeName, isReservedId } from '../mermaid/parse';
+import { SHAPES, ShapeName, isReservedId, supportsStructuredEditing } from '../mermaid/parse';
 import {
   addEdge,
   deleteEdge,
   deleteNode,
+  hasOpaqueLinkIndexReferences,
+  hasOpaqueNodeReferences,
   renameNodeId,
   setEdgeArrow,
   setEdgeLabel,
@@ -26,6 +28,7 @@ export function Inspector(): JSX.Element {
   const selection = useStore((s) => s.selection);
   const diagram = useStore((s) => s.diagram);
   const source = useStore((s) => s.source);
+  const renderError = useStore((s) => s.renderError);
   const setSource = useStore((s) => s.setSource);
   const select = useStore((s) => s.select);
 
@@ -39,19 +42,23 @@ export function Inspector(): JSX.Element {
 
   const idReserved = idDraft.trim() !== '' && isReservedId(idDraft.trim());
 
-  if (diagram.unsupported) {
+  if (!supportsStructuredEditing(diagram, renderError)) {
     return (
       <aside className="inspector">
         <h2>Inspector</h2>
         <p className="muted">
-          Visual editing supports <code>flowchart</code> / <code>graph</code> diagrams. This one is a{' '}
-          <code>{diagram.header}</code> — edit it as text or ask the agent.
+          Visual editing requires a valid <code>flowchart</code> / <code>graph</code> diagram. Fix the render error,
+          edit as text, or ask the agent.
         </p>
       </aside>
     );
   }
 
   if (node) {
+    const opaqueNodeReference = hasOpaqueNodeReferences(source, node.id);
+    const connectionCount = diagram.edges.filter((e) => e.from === node.id || e.to === node.id).length;
+    const opaqueLinkReference = connectionCount > 0 && hasOpaqueLinkIndexReferences(source);
+    const deleteBlocked = opaqueNodeReference || opaqueLinkReference;
     return (
       <aside className="inspector">
         <h2>Node</h2>
@@ -69,7 +76,7 @@ export function Inspector(): JSX.Element {
           <div className="row">
             <input value={idDraft} onChange={(e) => setIdDraft(e.target.value)} />
             <button
-              disabled={idDraft === node.id || idDraft.trim() === '' || idReserved}
+              disabled={idDraft === node.id || idDraft.trim() === '' || idReserved || opaqueNodeReference}
               onClick={() => {
                 setSource(renameNodeId(source, node.id, idDraft.trim()));
                 select({ kind: 'node', id: idDraft.trim() });
@@ -79,6 +86,9 @@ export function Inspector(): JSX.Element {
             </button>
           </div>
           {idReserved && <span className="field-error">“{idDraft.trim()}” is a Mermaid keyword</span>}
+          {opaqueNodeReference && (
+            <span className="field-error">Rename unavailable: this id is used by source-only Mermaid syntax.</span>
+          )}
         </label>
 
         <label>
@@ -121,11 +131,13 @@ export function Inspector(): JSX.Element {
         </label>
 
         <div className="inspector-meta">
-          <span>{diagram.edges.filter((e) => e.from === node.id || e.to === node.id).length} connections</span>
+          <span>{connectionCount} connections</span>
         </div>
 
         <button
           className="danger"
+          disabled={deleteBlocked}
+          title={deleteBlocked ? 'Delete unavailable while source-only syntax depends on this node or its links' : undefined}
           onClick={() => {
             setSource(deleteNode(source, node.id));
             select({ kind: 'none' });
@@ -138,6 +150,7 @@ export function Inspector(): JSX.Element {
   }
 
   if (edge) {
+    const deleteBlocked = hasOpaqueLinkIndexReferences(source);
     return (
       <aside className="inspector">
         <h2>Link</h2>
@@ -170,6 +183,8 @@ export function Inspector(): JSX.Element {
 
         <button
           className="danger"
+          disabled={deleteBlocked}
+          title={deleteBlocked ? 'Delete unavailable while source-only linkStyle syntax depends on link indexes' : undefined}
           onClick={() => {
             setSource(deleteEdge(source, edge.key));
             select({ kind: 'none' });

@@ -8,9 +8,9 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
+import { mkdir, open, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 export const ROOT = process.env.MDVE_HOME ?? join(homedir(), '.mdve');
 export const SESSIONS_DIR = join(ROOT, 'sessions');
@@ -25,7 +25,7 @@ export const DEFAULT_DIAGRAM = `flowchart TD
   build --> ship([Ship])
 `;
 
-const AGENTS_MD = `# MDVE session workspace
+const AGENTS_MD = `# MDVE Diagram workspace
 
 This directory belongs to MDVE, a Mermaid diagram editor. The user is looking
 at a live rendering of \`${DIAGRAM_FILE}\` while you work.
@@ -78,7 +78,32 @@ export function diagramPath(id: string): string {
 }
 
 async function writeMeta(meta: SessionMeta): Promise<void> {
-  await writeFile(metaPath(meta.id), JSON.stringify(meta, null, 2), 'utf8');
+  await writeAtomic(metaPath(meta.id), JSON.stringify(meta, null, 2));
+}
+
+async function writeAtomic(path: string, content: string): Promise<void> {
+  const temporaryPath = `${path}.${randomUUID()}.tmp`;
+  try {
+    const temporaryFile = await open(temporaryPath, 'wx');
+    try {
+      await temporaryFile.writeFile(content, 'utf8');
+      await temporaryFile.sync();
+    } finally {
+      await temporaryFile.close();
+    }
+
+    await rename(temporaryPath, path);
+
+    const parentDirectory = await open(dirname(path), 'r');
+    try {
+      await parentDirectory.sync();
+    } finally {
+      await parentDirectory.close();
+    }
+  } catch (error) {
+    await unlink(temporaryPath).catch(() => undefined);
+    throw error;
+  }
 }
 
 export async function readMeta(id: string): Promise<SessionMeta | null> {
@@ -112,7 +137,7 @@ export async function createSession(opts: { title?: string; source?: string } = 
   const id = randomUUID();
   const dir = sessionDir(id);
   await mkdir(dir, { recursive: true });
-  await writeFile(join(dir, DIAGRAM_FILE), opts.source ?? DEFAULT_DIAGRAM, 'utf8');
+  await writeAtomic(join(dir, DIAGRAM_FILE), opts.source ?? DEFAULT_DIAGRAM);
   await ensureAgentsFile(id);
   const now = Date.now();
   const meta: SessionMeta = {
@@ -162,7 +187,7 @@ export async function readDiagram(id: string): Promise<string | null> {
 }
 
 export async function writeDiagram(id: string, source: string): Promise<void> {
-  await writeFile(diagramPath(id), source, 'utf8');
+  await writeAtomic(diagramPath(id), source);
 }
 
 export async function ensureRoot(): Promise<void> {

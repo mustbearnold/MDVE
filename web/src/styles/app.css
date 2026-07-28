@@ -103,6 +103,19 @@ button.danger:hover {
   color: var(--accent);
 }
 
+.save-status {
+  min-width: 48px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.save-retry {
+  color: #ffb4ab;
+  border-color: var(--danger);
+  padding: 3px 7px;
+}
+
 /* Layout ------------------------------------------------------------- */
 
 .layout {

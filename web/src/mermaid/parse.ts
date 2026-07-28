@@ -78,6 +78,8 @@ export interface StatementLine {
   /** Trailing `%% comment` or `;`, preserved as written. */
   trailing: string;
   raw: string;
+  /** Set only when a mutator intentionally changes this parsed statement. */
+  modified?: boolean;
 }
 
 export interface RawLine {
@@ -120,6 +122,10 @@ export interface Diagram {
   edges: DiagramEdge[];
   /** True when the source declares a diagram type this editor cannot model. */
   unsupported: boolean;
+}
+
+export function supportsStructuredEditing(diagram: Diagram, renderError?: string | null): boolean {
+  return !renderError && !diagram.unsupported && (diagram.header === 'flowchart' || diagram.header === 'graph');
 }
 
 const HEADER_RE = /^\s*(flowchart|graph)\s+(TB|TD|BT|RL|LR)?\s*$/i;
@@ -431,7 +437,9 @@ export function parseDiagram(source: string): Diagram {
 /** Rebuilds source text from a (possibly mutated) line list. */
 export function serializeDiagram(lines: Line[]): string {
   return lines
-    .map((line) => (line.kind === 'statement' ? serializeStatement(line) : line.raw))
+    .map((line) =>
+      line.kind === 'statement' && (line.modified || line.raw === '') ? serializeStatement(line) : line.raw,
+    )
     .join('\n');
 }
 
