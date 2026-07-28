@@ -9,8 +9,10 @@ Canonical product vocabulary for MDVE. Decision rationale lives in the linked Wa
 - **Winning job** — Turning fuzzy technical reasoning or an existing `.mmd` file into a correct, durable, version-control-ready technical flowchart without copying between separate agent, editor, preview, and whiteboard tools.
 - **Diagram workspace** — The durable local container that owns one Diagram's source, metadata, agent instructions, recovery material, and Conversations. User-facing copy calls it a Diagram; avoid the overloaded term “session.”
 - **Diagram library** — The active and archived Diagram workspaces a user can search and revisit. Library lifecycle does not change a Diagram's source or recovery history.
-- **Conversation** — A durable sequence of agent turns attached to one Diagram workspace and one provider-thread identity. It always acts on the Diagram's current source and never owns a forked source.
+- **Conversation** — A durable sequence of agent turns attached to one Diagram workspace and one Agent provider, with at most one provider-thread identity. It always acts on the Diagram's current source and never owns a forked source.
 - **Conversation turn** — One user request and its agent progress, response, outcome, and starting and ending durable revisions within a Conversation.
+- **Agent provider** — The agent runtime and protocol whose model catalog, turn lifecycle, and provider-thread identity back a Conversation.
+- **Provider-thread identity** — An opaque continuation handle owned by one Agent provider and bound to one Conversation; it is not the Conversation transcript.
 - **Archive** — A reversible visibility state for a Diagram or Conversation that retains source, history, transcript, and provider continuity. Archive is not Trash or permanent deletion.
 - **Source of truth** — `diagram.mmd`; rendered and structured views derive from this file and must not maintain a competing diagram model.
 - **Durable revision** — A monotonically numbered `diagram.mmd` version that MDVE has atomically written, flushed to local disk, and acknowledged as **Saved**.
@@ -31,3 +33,4 @@ Canonical product vocabulary for MDVE. Decision rationale lives in the linked Wa
 - [Choose the session and conversation continuity model](.scratch/mdve-v1/issues/04-choose-session-and-conversation-model.md)
 - [Choose the v1 structured-diagram boundary](.scratch/mdve-v1/issues/06-choose-v1-structured-diagram-boundary.md)
 - [Choose the v1 installation, update, and adoption path](.scratch/mdve-v1/issues/07-choose-v1-installation-update-and-adoption-path.md)
+- [Choose the v1 agent-provider boundary](.scratch/mdve-v1/issues/08-choose-v1-agent-provider-boundary.md)

@@ -21,6 +21,10 @@ release be free, paid, or deliberately pre-commercial?
   ambiguity.
 - npm trusted publishing works from a private GitHub repository, but public
   provenance cannot be generated from that private source.
+- Codex app-server requires integrations to identify their client, and its
+  documentation asks new enterprise integrations to contact OpenAI for known-client
+  registration; commercialization may not imply enterprise support before that
+  relationship and the applicable terms are confirmed.
 - Monetization should not weaken local ownership, offline use after installation,
   recovery, or rollback guarantees.
 
