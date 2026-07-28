@@ -24,7 +24,8 @@ export function ChatPanel(): JSX.Element {
   const modelInfo = provider?.models.find((m) => m.id === model);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+    const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior });
   }, [chat]);
 
   const submit = async () => {
@@ -59,48 +60,59 @@ export function ChatPanel(): JSX.Element {
   };
 
   return (
-    <section className="chat">
+    <section className="chat" aria-labelledby="agent-heading">
       <header className="chat-header">
+        <div className="chat-title-row">
+          <h2 id="agent-heading">Agent</h2>
+          <span className={`provider-state${provider?.status.ok ? ' provider-ready' : ''}`}>
+            {provider?.status.ok ? 'Ready' : 'Unavailable'}
+          </span>
+        </div>
         <div className="chat-provider">
-          <select value={providerId} onChange={(e) => setProvider(e.target.value)}>
-            {providers.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-          {provider && provider.models.length > 0 && (
-            <select value={model} onChange={(e) => setModel(e.target.value)} title="Model">
-              {provider.models.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.label}
-                  {m.deprecated ? ' (deprecated)' : ''}
+          <label>
+            <span className="sr-only">Provider</span>
+            <select value={providerId} onChange={(e) => setProvider(e.target.value)}>
+              {providers.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
                 </option>
               ))}
             </select>
+          </label>
+          {provider && provider.models.length > 0 && (
+            <label>
+              <span className="sr-only">Model</span>
+              <select value={model} onChange={(e) => setModel(e.target.value)}>
+                {provider.models.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                    {m.deprecated ? ' (deprecated)' : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
           )}
           {modelInfo && modelInfo.efforts.length > 0 && (
-            <select
-              className="effort-select"
-              value={effort}
-              onChange={(e) => setEffort(e.target.value)}
-              title="Reasoning effort"
-            >
-              {modelInfo.efforts.map((e) => (
-                <option key={e} value={e}>
-                  {e}
-                </option>
-              ))}
-            </select>
+            <label className="effort-select">
+              <span className="sr-only">Reasoning effort</span>
+              <select value={effort} onChange={(e) => setEffort(e.target.value)}>
+                {modelInfo.efforts.map((e) => (
+                  <option key={e} value={e}>
+                    {e}
+                  </option>
+                ))}
+              </select>
+            </label>
           )}
         </div>
         {provider && !provider.status.ok && <p className="chat-warning">{provider.status.detail}</p>}
       </header>
 
-      <div className="chat-log" ref={scrollRef}>
+      <div className="chat-log" ref={scrollRef} role="log" aria-live="polite" aria-label="Agent conversation">
         {chat.length === 0 && (
           <div className="chat-empty">
-            <p>The agent reads and edits this diagram directly.</p>
+            <strong>Describe a diagram change</strong>
+            <p>The agent works against this Diagram's current Mermaid source.</p>
             <ul>
               <li>“Add an error path from the decision node”</li>
               <li>“Turn this into a swimlane-style flow with subgraphs”</li>
@@ -110,7 +122,11 @@ export function ChatPanel(): JSX.Element {
         )}
 
         {chat.map((message) => (
-          <article key={message.id} className={`msg msg-${message.role}${message.error ? ' msg-error' : ''}`}>
+          <article
+            key={message.id}
+            className={`msg msg-${message.role}${message.error ? ' msg-error' : ''}`}
+            aria-label={message.role === 'user' ? 'You' : 'Agent'}
+          >
             {message.trace && message.trace.length > 0 && showTrace && (
               <ul className="msg-trace">
                 {message.trace.map((line, i) => (
@@ -119,16 +135,20 @@ export function ChatPanel(): JSX.Element {
               </ul>
             )}
             <div className="msg-text">
-              {message.text || (message.pending ? <span className="dots">working…</span> : null)}
+              {message.text || (message.pending ? <span className="dots" role="status">Working…</span> : null)}
             </div>
           </article>
         ))}
       </div>
 
       <footer className="chat-input">
+        <label className="chat-prompt-label" htmlFor="agent-prompt">
+          Change request
+        </label>
         <textarea
+          id="agent-prompt"
           value={input}
-          placeholder={busy ? 'Agent is working…' : 'Ask the agent to change the diagram'}
+          placeholder={busy ? 'Agent is working…' : 'For example: add a retry path after validation'}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -141,14 +161,14 @@ export function ChatPanel(): JSX.Element {
         <div className="chat-actions">
           <label className="trace-toggle">
             <input type="checkbox" checked={showTrace} onChange={(e) => setShowTrace(e.target.checked)} />
-            trace
+            Show trace
           </label>
           {busy ? (
             <button className="danger" onClick={() => session && void api.stop(session.id)}>
               Stop
             </button>
           ) : (
-            <button onClick={() => void submit()} disabled={!input.trim()}>
+            <button className="button-primary" onClick={() => void submit()} disabled={!input.trim()}>
               Send
             </button>
           )}

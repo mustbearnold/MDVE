@@ -12,7 +12,7 @@ const theme = EditorView.theme(
     '.cm-content': { caretColor: '#e6edf3' },
     '.cm-gutters': { backgroundColor: 'transparent', border: 'none', color: '#4b5563' },
     '.cm-activeLine': { backgroundColor: 'rgba(255,255,255,0.03)' },
-    '&.cm-focused': { outline: 'none' },
+    '&.cm-focused': { outline: '2px solid var(--focus)', outlineOffset: '-2px' },
   },
   { dark: true },
 );
@@ -36,6 +36,7 @@ export function CodePane(): JSX.Element {
           history(),
           keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
           EditorView.lineWrapping,
+          EditorView.contentAttributes.of({ 'aria-label': 'Mermaid source' }),
           theme,
           EditorView.updateListener.of((update) => {
             if (!update.docChanged) return;

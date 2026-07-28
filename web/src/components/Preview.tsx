@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import mermaid from 'mermaid';
 
-import { reservedIdsIn } from '../mermaid/parse';
-import { useStore } from '../state/store';
+import { reservedIdsIn, type Diagram } from '../mermaid/parse';
+import { useStore, type Selection } from '../state/store';
+import { Icon } from './Icon';
 
 mermaid.initialize({
   startOnLoad: false,
@@ -51,6 +52,23 @@ function edgeEndsOf(el: Element, knownIds: Set<string>): { from: string; to: str
   return null;
 }
 
+function selectionForTarget(
+  target: Element,
+  diagram: Diagram,
+  knownNodeIds: Set<string>,
+): Exclude<Selection, { kind: 'none' }> | null {
+  const node = target.closest('g.node');
+  if (node) {
+    const id = nodeIdOf(node);
+    return id ? { kind: 'node', id } : null;
+  }
+
+  const edgeElement = target.closest('.edgePaths path, .flowchart-link');
+  const ends = edgeElement && edgeEndsOf(edgeElement, knownNodeIds);
+  const edge = ends && diagram.edges.find((candidate) => candidate.from === ends.from && candidate.to === ends.to);
+  return edge ? { kind: 'edge', key: edge.key } : null;
+}
+
 export function Preview(): JSX.Element {
   const source = useStore((s) => s.source);
   const selection = useStore((s) => s.selection);
@@ -59,6 +77,7 @@ export function Preview(): JSX.Element {
   const renderError = useStore((s) => s.renderError);
   const setRenderError = useStore((s) => s.setRenderError);
   const reserved = useMemo(() => (renderError ? reservedIdsIn(source) : []), [renderError, source]);
+  const knownNodeIds = useMemo(() => new Set(diagram.nodes.map((node) => node.id)), [diagram.nodes]);
 
   const hostRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -121,6 +140,20 @@ export function Preview(): JSX.Element {
             setContent({ width: vb.width, height: vb.height });
           }
         }
+        hostRef.current.querySelectorAll('g.node').forEach((nodeElement) => {
+          const nodeId = nodeIdOf(nodeElement);
+          if (!nodeId) return;
+          const node = diagram.nodes.find((candidate) => candidate.id === nodeId);
+          const accessibleLabel =
+            node?.label
+              .replace(/<br\s*\/?>/gi, ' ')
+              .replace(/<[^>]+>/g, ' ')
+              .replace(/\s+/g, ' ')
+              .trim() || nodeElement.textContent?.replace(/\s+/g, ' ').trim() || nodeId;
+          nodeElement.setAttribute('role', 'button');
+          nodeElement.setAttribute('tabindex', '0');
+          nodeElement.setAttribute('aria-label', `Node: ${accessibleLabel}`);
+        });
         // Rendered links are 1–2px wide, which is a miserable click target.
         // Shadow each one with a fat transparent path that takes the clicks.
         hostRef.current.querySelectorAll('.edgePaths path').forEach((path) => {
@@ -132,6 +165,12 @@ export function Preview(): JSX.Element {
           hit.removeAttribute('marker-end');
           hit.removeAttribute('style');
           hit.id = `hit-${path.id}`;
+          const ends = edgeEndsOf(path, knownNodeIds);
+          if (ends) {
+            hit.setAttribute('role', 'button');
+            hit.setAttribute('tabindex', '0');
+            hit.setAttribute('aria-label', `Link: ${ends.from} to ${ends.to}`);
+          }
           path.parentElement?.insertBefore(hit, path);
         });
         if (!manualViewRef.current) fitToView();
@@ -147,7 +186,7 @@ export function Preview(): JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [source, setRenderError, fitToView]);
+  }, [source, diagram, knownNodeIds, setRenderError, fitToView]);
 
   // Refit when the pane itself changes size.
   useEffect(() => {
@@ -175,41 +214,20 @@ export function Preview(): JSX.Element {
     } else if (selection.kind === 'edge') {
       const edge = diagram.edges.find((e) => e.key === selection.key);
       if (edge) {
-        const knownIds = new Set(diagram.nodes.map((n) => n.id));
         host.querySelectorAll('.edgePaths path:not(.mdve-hit)').forEach((el) => {
-          const ends = edgeEndsOf(el, knownIds);
+          const ends = edgeEndsOf(el, knownNodeIds);
           if (ends && ends.from === edge.from && ends.to === edge.to) el.classList.add('mdve-selected');
         });
       }
     }
-  }, [selection, source, diagram]);
+  }, [selection, source, diagram, knownNodeIds]);
 
   const onClick = useCallback(
     (event: React.MouseEvent) => {
       const target = event.target as Element;
-      const node = target.closest('g.node');
-      if (node) {
-        const id = nodeIdOf(node);
-        if (id) {
-          select({ kind: 'node', id });
-          return;
-        }
-      }
-      const edgeEl = target.closest('.edgePaths path, .flowchart-link');
-      if (edgeEl) {
-        const knownIds = new Set(diagram.nodes.map((n) => n.id));
-        const ends = edgeEndsOf(edgeEl, knownIds);
-        if (ends) {
-          const edge = diagram.edges.find((e) => e.from === ends.from && e.to === ends.to);
-          if (edge) {
-            select({ kind: 'edge', key: edge.key });
-            return;
-          }
-        }
-      }
-      select({ kind: 'none' });
+      select(selectionForTarget(target, diagram, knownNodeIds) ?? { kind: 'none' });
     },
-    [diagram, select],
+    [diagram, knownNodeIds, select],
   );
 
   const onWheel = useCallback(
@@ -219,6 +237,18 @@ export function Preview(): JSX.Element {
       zoomBy(event.deltaY < 0 ? 1.1 : 1 / 1.1);
     },
     [zoomBy],
+  );
+
+  const onKeyDown = useCallback(
+    (event: React.KeyboardEvent) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      const target = event.target as Element;
+      const nextSelection = selectionForTarget(target, diagram, knownNodeIds);
+      if (!nextSelection) return;
+      event.preventDefault();
+      select(nextSelection);
+    },
+    [diagram, knownNodeIds, select],
   );
 
   const onPointerDown = (event: React.PointerEvent) => {
@@ -245,29 +275,36 @@ export function Preview(): JSX.Element {
 
   return (
     <div className="preview">
-      <div className="preview-tools">
-        <button onClick={() => zoomBy(1.2)} title="Zoom in">
-          +
+      <div className="preview-tools" aria-label="Preview controls">
+        <button className="icon-button" onClick={() => zoomBy(1.2)} title="Zoom in" aria-label="Zoom in">
+          <Icon name="zoom-in" />
         </button>
-        <button onClick={() => zoomBy(1 / 1.2)} title="Zoom out">
-          −
+        <button className="icon-button" onClick={() => zoomBy(1 / 1.2)} title="Zoom out" aria-label="Zoom out">
+          <Icon name="zoom-out" />
         </button>
         <button
+          className="icon-button"
           onClick={() => {
             manualViewRef.current = false;
             fitToView();
           }}
           title="Fit to view"
+          aria-label="Fit diagram to view"
         >
-          ⤢
+          <Icon name="fit" />
         </button>
-        <span className="zoom-label">{Math.round(view.scale * 100)}%</span>
+        <span className="zoom-label" aria-label={`Zoom ${Math.round(view.scale * 100)} percent`}>
+          {Math.round(view.scale * 100)}%
+        </span>
       </div>
 
       <div
         className="preview-canvas"
         ref={canvasRef}
+        role="region"
+        aria-label="Diagram preview"
         onClick={onClick}
+        onKeyDown={onKeyDown}
         onWheel={onWheel}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 import { subscribeDiagram } from './api';
 import { ChatPanel } from './components/ChatPanel';
@@ -6,12 +6,14 @@ import { CodePane } from './components/CodePane';
 import { Inspector } from './components/Inspector';
 import { Preview } from './components/Preview';
 import { Toolbar } from './components/Toolbar';
+import { WorkbenchTabs, type WorkbenchView } from './components/WorkbenchTabs';
 import { useStore } from './state/store';
 
 export function App(): JSX.Element {
   const session = useStore((s) => s.session);
   const loadSession = useStore((s) => s.loadSession);
   const loadProviders = useStore((s) => s.loadProviders);
+  const [activeView, setActiveView] = useState<WorkbenchView>('preview');
 
   useEffect(() => {
     void loadSession(localStorage.getItem('mdve.session') ?? undefined).catch(() => void loadSession());
@@ -50,18 +52,49 @@ export function App(): JSX.Element {
 
   return (
     <div className="app">
+      <a className="skip-link" href="#workbench-main">
+        Skip to workbench
+      </a>
       <Toolbar />
-      <main className="layout">
-        <div className="pane pane-code">
-          <div className="pane-title">Source</div>
+      <WorkbenchTabs activeView={activeView} onChange={setActiveView} />
+      <main className="layout" id="workbench-main">
+        <section
+          className={`pane pane-code${activeView === 'source' ? ' pane-active' : ''}`}
+          id="workbench-source"
+          aria-labelledby="source-heading"
+        >
+          <header className="pane-header">
+            <h2 id="source-heading">Source</h2>
+            <span>Mermaid</span>
+          </header>
           <CodePane />
-        </div>
-        <div className="pane pane-preview">
+        </section>
+        <section
+          className={`pane pane-preview${activeView === 'preview' ? ' pane-active' : ''}`}
+          id="workbench-preview"
+          aria-labelledby="preview-heading"
+        >
+          <header className="pane-header">
+            <h2 id="preview-heading">Preview</h2>
+            <span>Select a node or link to inspect it</span>
+          </header>
           <Preview />
-        </div>
-        <div className="pane pane-side">
-          <Inspector />
-          <ChatPanel />
+        </section>
+        <div
+          className={`pane pane-side${activeView === 'inspector' || activeView === 'agent' ? ' pane-active' : ''}`}
+        >
+          <div
+            className={`side-view side-inspector${activeView === 'inspector' ? ' side-view-active' : ''}`}
+            id="workbench-inspector"
+          >
+            <Inspector />
+          </div>
+          <div
+            className={`side-view side-agent${activeView === 'agent' ? ' side-view-active' : ''}`}
+            id="workbench-agent"
+          >
+            <ChatPanel />
+          </div>
         </div>
       </main>
     </div>
