@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Mermaid Diagram Visual Editor with an LLM agent that can view and edit the diagram",
   "engines": {
-    "node": ">=20"
+    "node": "^22.11.0 || ^24.11.0"
   },
   "scripts": {
     "dev": "concurrently -n server,web -c blue,green \"npm:dev:server\" \"npm:dev:web\"",
