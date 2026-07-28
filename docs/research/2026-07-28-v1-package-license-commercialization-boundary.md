@@ -1,7 +1,7 @@
 # V1 package license and commercialization boundary research
 
-**Research date:** 2026-07-28  
-**Ticket:** `.scratch/mdve-v1/issues/09-choose-v1-package-license-and-commercialization-boundary.md`  
+**Research date:** 2026-07-28
+**Ticket:** `.scratch/mdve-v1/issues/09-choose-v1-package-license-and-commercialization-boundary.md`
 **Question:** Which visibility and license should govern a publicly downloadable `mdve`
 npm artifact built from a private GitHub repository, and should v1 be free, paid, or
 deliberately pre-commercial?
