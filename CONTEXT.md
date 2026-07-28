@@ -24,7 +24,7 @@ Canonical product vocabulary for MDVE. Decision rationale lives in the linked Wa
 - **Agent transformation** — A Codex turn that reads and edits `diagram.mmd` inside its Diagram workspace and reports progress to the workspace.
 - **Local web application** — MDVE's v1 delivery form: an `mdve` CLI starts one loopback-only process that serves the version-matched UI and API from a stable local origin and opens the system browser. It is local software, not a hosted service.
 - **Release artifact** — The versioned npm package that installs the `mdve` executable and contains its version-matched launcher, server, and production UI.
-- **Pre-commercial release** — A public, free-of-charge MDVE release with no billing or license-entitlement mechanism, used to prove repeated value before a later commercial model. Its shipped license remains attached to that version; later pricing or terms apply only prospectively.
+- **Pre-commercial release** — A public, free-of-charge MDVE release with no billing or license-entitlement mechanism.
 
 ## Decision source
 

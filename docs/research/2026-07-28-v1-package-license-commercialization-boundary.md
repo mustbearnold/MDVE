@@ -18,8 +18,15 @@ artifact. Perimeter permits any purpose except providing others a product that c
 with MDVE. Its grant covers use, changes, new works, and distribution for permitted
 purposes, so it covers both personal use and ordinary internal commercial work without a
 seat limit, payment condition, license key, or online entitlement in the license text.
-Its competition definition reaches products marketed as substitutes even when they use a
-different interface, platform, or language or are free of charge.
+Its competition definition restricts a recipient from using the licensed software to
+provide a product marketed as a substitute even when that product uses a different
+interface, platform, or language or is free of charge. It does not prohibit independently
+developed competitors or limit fair-use rights.
+
+Perimeter also grants a patent license covering licensable claims that use of the software
+would infringe. That patent license ends if the recipient or their company makes a written
+patent-infringement claim about the software. Counsel must assess that patent-defense
+termination as a material condition of the chosen license.
 
 Perimeter is a standardized non-open-source license, not an OSI-approved license. It does
 not make the private repository or absent preferred source public. MDVE must describe v1
@@ -133,7 +140,7 @@ correct before the first stable publication. See the [npm unpublish policy](http
 
 | Option | Rights and source consequence | Commercial consequence | Fit |
 | --- | --- | --- | --- |
-| **A. PolyForm Perimeter 1.0.1; free-of-charge v1** | Permits use, modification, new works, and distribution for every purpose except providing a product that competes with MDVE. This covers personal and internal commercial use and does not require source publication. It is not on SPDX 3.28.0 and is not OSI-approved. | Blocks free or paid substitute products across deployment forms while leaving noncompeting use broad. Future paid versions remain possible without a v1 entitlement system. | **Recommended, subject to counsel.** Strongest standard-term match for private source, public artifact, broad use, and a direct-product moat. |
+| **A. PolyForm Perimeter 1.0.1; free-of-charge v1** | Permits use, modification, new works, and distribution for every purpose except using the software to provide a competing product. It also grants a patent license that terminates on a written patent-infringement claim about the software. This covers personal and internal commercial use and does not require source publication. It is not on SPDX 3.28.0 and is not OSI-approved. | Restricts licensees from using the artifact to provide free or paid substitute products across deployment forms while leaving independent competition and noncompeting use untouched. Future paid versions remain possible without a v1 entitlement system. | **Recommended, subject to counsel.** Strongest standard-term match for private source, public artifact, broad use, and an artifact-use competitive boundary. |
 | **B. PolyForm Internal Use 1.0.0** | Permits internal business operations and internal modifications but forbids recipient distribution. Its text does not expressly name unrelated personal use as a permitted purpose. It is not on SPDX 3.28.0 and is not OSI-approved. | Stronger control than Perimeter, but no focused competition test and a narrower user grant. Personal use would need a second license or clarification, defeating the value of standard terms. | Not recommended for MDVE's broad personal-plus-work use case. If chosen, metadata should also use `SEE LICENSE IN LICENSE.md`. |
 | **C. Custom release-artifact license** | Can state personal/internal-business execution, backup, offline survival, security research, outputs, and artifact-only scope exactly while withholding redistribution. | Maximizes future flexibility, but creates bespoke drafting, interpretation, and international-enforcement risk. | Viable fallback only if counsel finds a material Perimeter mismatch. |
 | **D. Elastic License 2.0** | ELv2 grants use, copying, distribution, availability, and derivative works, while restricting hosted/managed-service use, license-key circumvention, and removal of notices. It has SPDX id `Elastic-2.0` but is not OSI-approved. Without preferred source, do not call the artifact source-available. | Allows internal commercial use and competing local redistribution; its main competitive protection targets managed services, which is not MDVE's v1 delivery form. | Viable but weaker than Perimeter for a local-product moat. Use `"license": "Elastic-2.0"` if chosen. |
@@ -256,7 +263,8 @@ license](https://github.com/openai/codex/blob/8e271dc02b23d42827875019924be0f500
 
 1. Have qualified counsel review unmodified PolyForm Perimeter 1.0.1 for MDVE's exact
    artifact scope, including mandatory consumer rights, personal/internal use, security
-   research, redistribution, competition, termination/cure, and obtained-version survival.
+   research, redistribution, competition, its patent grant and patent-defense termination,
+   termination/cure, and obtained-version survival.
 2. Audit copyright ownership plus all direct and transitive dependency licenses; ship the
    required notices and keep third-party components outside MDVE's proprietary grant.
 3. Add a tarball test that verifies the exact allowlist, scans source maps and bundles for

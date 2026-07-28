@@ -43,8 +43,16 @@ PolyForm Perimeter permits use, modification, new works, and distribution for
 any purpose except providing others a product that competes with MDVE. That
 gives an individual or company broad personal and internal commercial use
 without a seat limit, payment condition, license key, or online entitlement,
-while preventing a public package recipient from marketing a substitute product
-even under another interface, platform, language, or price.
+while restricting a recipient from using the licensed artifact to provide a
+substitute product even under another interface, platform, language, or price.
+It does not prohibit independently developed competitors or limit fair-use
+rights.
+
+Perimeter also grants a patent license covering licensable claims that use of
+the artifact would infringe, and terminates that patent license if the recipient
+or their company makes a written patent-infringement claim about the software.
+That patent-defense condition is a material part of the selected boundary, not
+boilerplate to omit from release review.
 
 The package metadata must use:
 
@@ -63,9 +71,10 @@ their own scope, and user Diagrams, Mermaid source, recovery material, and agent
 output are not relicensed as MDVE software.
 
 Qualified counsel must approve the exact artifact scope, notice, mandatory-law
-interaction, competition boundary, termination/cure behavior, and obtained-copy
-survival before `private: true` is removed or any package is published. This
-decision selects the product boundary; it does not claim that the current
+interaction, competition boundary, patent grant and patent-defense termination,
+termination/cure behavior, and obtained-copy survival before `private: true` is
+removed or any package is published. This decision selects the product
+boundary; it does not claim that the current
 repository already grants these rights or substitute for legal advice.
 
 ### Pre-commercial v1 contract
@@ -107,14 +116,15 @@ before paid or enterprise positioning.
   provenance.
 - Audit direct and transitive licenses and copyright ownership before packing;
   MDVE's license cannot override third-party terms.
-- Prove that install, use after install, update, rollback, and uninstall do not
-  depend on payment, MDVE identity, activation, or continued MDVE network access.
+- Prove that install, use after install, recovery and restore, update, rollback,
+  and uninstall do not depend on payment, MDVE identity, activation, or
+  continued MDVE network access.
 
 ### Options considered
 
 | Option | User rights | Commercial boundary | Decision |
 | --- | --- | --- | --- |
-| PolyForm Perimeter 1.0.1, free-of-charge v1 | Broad personal and business use, changes, and noncompeting distribution | Blocks substitute products without adding entitlements | **Choose, subject to counsel** |
+| PolyForm Perimeter 1.0.1, free-of-charge v1 | Broad personal and business use, changes, noncompeting distribution, and a patent grant with patent-defense termination | Restricts using the artifact to provide substitute products without adding entitlements | **Choose, subject to counsel** |
 | PolyForm Internal Use 1.0.0 | Internal business use and changes; no distribution; unrelated personal use is not explicit | Strong control but too narrow for the target user | Reject |
 | Custom proprietary artifact license | Can express every desired edge exactly | Bespoke drafting and enforcement risk before product proof | Fallback only if counsel finds a material Perimeter mismatch |
 | Elastic-2.0 or Apache-2.0 | Broad use, changes, and redistribution | Allows competing local redistribution; Apache also commits the artifact to an open-source model when preferred source is published | Defer unless the business model deliberately changes |
@@ -130,8 +140,10 @@ usable grant instead of defining one.
   require scoped access. Public visibility therefore preserves the chosen
   frictionless install path but cannot enforce payment.
 - npm's current [`package.json` license
-  rules](https://docs.npmjs.com/cli/v11/configuring-npm/package-json/#license)
-  require an explicit license and provide `SEE LICENSE IN` for unlisted terms.
+  guidance](https://docs.npmjs.com/cli/v11/configuring-npm/package-json/#license)
+  says packages should specify a license and provides `SEE LICENSE IN` for
+  unlisted terms; MDVE makes that recommendation a release requirement to avoid
+  an ambiguous public grant.
 - [PolyForm Perimeter
   1.0.1](https://polyformproject.org/licenses/perimeter/1.0.1) supplies the
   focused noncompete grant; it is deliberately not presented as OSI-approved.
@@ -147,8 +159,9 @@ usable grant instead of defining one.
 
 The chosen boundary gives up an open-source adoption claim and delays revenue.
 In return, recipients get broad, explicit local-use rights with no entitlement
-dependency, the private repository and direct-product moat remain meaningful,
-and MDVE can learn from real v1 use before choosing a paid model.
+dependency, the private repository and restriction on using the artifact to
+provide a direct substitute remain meaningful, and MDVE can learn from real v1
+use before choosing a paid model.
 
 Confidence: **high (0.90)** on the product boundary and **not asserted** on final
 legal sufficiency until qualified counsel accepts the exact release terms.
