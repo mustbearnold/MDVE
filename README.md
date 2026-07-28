@@ -37,7 +37,7 @@ Toolbar: new/open/rename diagram, add node, layout direction, undo/redo, import
 
 ## How the agent edits the diagram
 
-Every diagram is a session directory under `~/.mdve/sessions/<uuid>/`:
+Every Diagram has a workspace directory under `~/.mdve/sessions/<uuid>/`:
 
 ```
 diagram.mmd    the diagram — the single source of truth
