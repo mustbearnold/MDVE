@@ -28,17 +28,22 @@ function statements(lines: Line[]): StatementLine[] {
   return lines.filter((l): l is StatementLine => l.kind === 'statement');
 }
 
-/** Where new statements should be appended (after the last statement, else end). */
+/**
+ * Append new top-level statements after the diagram body, but before trailing
+ * blank lines. Inserting after the last parsed statement can accidentally put a
+ * new node inside the final subgraph because `end` is deliberately opaque.
+ */
 function insertionIndex(lines: Line[]): number {
-  for (let i = lines.length - 1; i >= 0; i--) {
-    if (lines[i].kind === 'statement') return i + 1;
+  let index = lines.length;
+  while (index > 0) {
+    const line = lines[index - 1];
+    if (line.kind !== 'raw' || line.raw.trim() !== '') break;
+    index--;
   }
-  return lines.length;
+  return index;
 }
 
-function defaultIndent(lines: Line[]): string {
-  const first = statements(lines)[0];
-  if (first) return first.indent;
+function defaultIndent(): string {
   return '  ';
 }
 
@@ -46,8 +51,31 @@ function reindex(lines: Line[]): Line[] {
   return lines.map((line, index) => ({ ...line, index }));
 }
 
+function canInsertStructuredStatement(diagram: Diagram): boolean {
+  return !diagram.unsupported && (diagram.header === 'flowchart' || diagram.header === 'graph');
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Identity-changing edits cannot safely leave an opaque directive or statement
+ * pointing at the old node id. Be conservative until that syntax is modeled.
+ */
+export function hasOpaqueNodeReferences(source: string, id: string): boolean {
+  const diagram = parseDiagram(source);
+  const token = new RegExp(`(^|[^A-Za-z0-9_.-])${escapeRegExp(id)}(?=$|[^A-Za-z0-9_.-])`);
+  return diagram.lines.some((line) => {
+    if (line.kind !== 'raw' || line.index === diagram.headerLine) return false;
+    if (line.raw.trimStart().startsWith('%%')) return false;
+    return token.test(line.raw);
+  });
+}
+
 export function setNodeLabel(source: string, id: string, label: string): string {
   const diagram = parseDiagram(source);
+  if (!canInsertStructuredStatement(diagram)) return source;
   const lines = cloneLines(diagram);
   let applied = false;
 
@@ -80,6 +108,7 @@ export function setNodeLabel(source: string, id: string, label: string): string 
 
 export function setNodeShape(source: string, id: string, shape: ShapeName): string {
   const diagram = parseDiagram(source);
+  if (!canInsertStructuredStatement(diagram)) return source;
   const lines = cloneLines(diagram);
   const node = diagram.nodes.find((n) => n.id === id);
   const label = node?.label ?? id;
@@ -115,6 +144,7 @@ export function renameNodeId(source: string, oldId: string, newId: string): stri
   if (!/^[A-Za-z0-9_][A-Za-z0-9_.-]*$/.test(newId)) return source;
   if (isReservedId(newId)) return source;
   const diagram = parseDiagram(source);
+  if (!canInsertStructuredStatement(diagram) || hasOpaqueNodeReferences(source, oldId)) return source;
   if (diagram.nodes.some((n) => n.id === newId)) return source;
   const lines = cloneLines(diagram);
 
@@ -131,6 +161,7 @@ export function addNode(
   opts: { id?: string; label?: string; shape?: ShapeName } = {},
 ): { source: string; id: string } {
   const diagram = parseDiagram(source);
+  if (!canInsertStructuredStatement(diagram)) return { source, id: opts.id ?? '' };
   const existing = new Set(diagram.nodes.map((n) => n.id));
   let id = opts.id;
   if (!id || existing.has(id) || isReservedId(id)) {
@@ -151,7 +182,7 @@ export function addNode(
   lines.splice(at, 0, {
     kind: 'statement',
     index: at,
-    indent: defaultIndent(lines),
+    indent: defaultIndent(),
     tokens: [token],
     trailing: '',
     raw: '',
@@ -167,12 +198,13 @@ export function addEdge(
   opts: { arrow?: string; label?: string } = {},
 ): string {
   const diagram = parseDiagram(source);
+  if (!canInsertStructuredStatement(diagram)) return source;
   const lines = cloneLines(diagram);
   const at = insertionIndex(lines);
   lines.splice(at, 0, {
     kind: 'statement',
     index: at,
-    indent: defaultIndent(lines),
+    indent: defaultIndent(),
     tokens: [
       { kind: 'node', id: from },
       { kind: 'link', arrow: opts.arrow ?? '-->', label: opts.label, labelStyle: 'pipe' },
@@ -186,6 +218,7 @@ export function addEdge(
 
 export function setEdgeLabel(source: string, key: string, label: string): string {
   const diagram = parseDiagram(source);
+  if (!canInsertStructuredStatement(diagram)) return source;
   const lines = cloneLines(diagram);
   const [lineIndex, tokenIndex] = key.split(':').map(Number);
   const line = lines[lineIndex];
@@ -199,6 +232,7 @@ export function setEdgeLabel(source: string, key: string, label: string): string
 
 export function setEdgeArrow(source: string, key: string, arrow: string): string {
   const diagram = parseDiagram(source);
+  if (!canInsertStructuredStatement(diagram)) return source;
   const lines = cloneLines(diagram);
   const [lineIndex, tokenIndex] = key.split(':').map(Number);
   const line = lines[lineIndex];
@@ -215,6 +249,7 @@ export function setEdgeArrow(source: string, key: string, arrow: string): string
  */
 export function deleteEdge(source: string, key: string): string {
   const diagram = parseDiagram(source);
+  if (!canInsertStructuredStatement(diagram)) return source;
   const lines = cloneLines(diagram);
   const [lineIndex, tokenIndex] = key.split(':').map(Number);
   const line = lines[lineIndex];
@@ -245,6 +280,7 @@ export function deleteEdge(source: string, key: string): string {
 /** Deletes a node and every link that touches it. */
 export function deleteNode(source: string, id: string): string {
   const diagram = parseDiagram(source);
+  if (!canInsertStructuredStatement(diagram) || hasOpaqueNodeReferences(source, id)) return source;
   const lines = cloneLines(diagram);
   const out: Line[] = [];
 

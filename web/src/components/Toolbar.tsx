@@ -29,6 +29,8 @@ export function Toolbar(): JSX.Element {
   const redo = useStore((s) => s.redo);
   const past = useStore((s) => s.past);
   const future = useStore((s) => s.future);
+  const saveStatus = useStore((s) => s.saveStatus);
+  const retrySave = useStore((s) => s.retrySave);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const exportSvg = () => {
@@ -96,21 +98,34 @@ export function Toolbar(): JSX.Element {
         >
           Rename
         </button>
+        <span className={`save-status save-${saveStatus.state}`} aria-live="polite">
+          {saveStatus.state === 'error' ? (
+            <button className="save-retry" onClick={retrySave} title={saveStatus.message}>
+              Save failed · Retry
+            </button>
+          ) : saveStatus.state === 'saving' ? (
+            'Saving…'
+          ) : (
+            'Saved'
+          )}
+        </span>
       </div>
 
       <div className="toolbar-group">
         <button
+          disabled={!diagram.header || diagram.unsupported}
+          title={!diagram.header || diagram.unsupported ? 'Structured editing supports flowchart / graph diagrams' : undefined}
           onClick={() => {
             const { source: next, id } = addNode(source);
             setSource(next);
-            select({ kind: 'node', id });
+            if (id) select({ kind: 'node', id });
           }}
         >
           + Node
         </button>
         <select
           value={diagram.direction}
-          disabled={diagram.unsupported}
+          disabled={!diagram.header || diagram.unsupported}
           onChange={(e) => setSource(setDirection(source, e.target.value))}
           title="Layout direction"
         >

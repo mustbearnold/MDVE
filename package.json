@@ -9,10 +9,11 @@
   },
   "scripts": {
     "dev": "concurrently -n server,web -c blue,green \"npm:dev:server\" \"npm:dev:web\"",
-    "dev:server": "tsx watch server/src/index.ts",
+    "dev:server": "PORT=${MDVE_PORT:-8787} tsx watch server/src/index.ts",
     "dev:web": "vite",
     "build": "vite build",
     "start": "NODE_ENV=production tsx server/src/index.ts",
+    "test": "tsx --test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

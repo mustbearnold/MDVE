@@ -5,6 +5,7 @@ import {
   addEdge,
   deleteEdge,
   deleteNode,
+  hasOpaqueNodeReferences,
   renameNodeId,
   setEdgeArrow,
   setEdgeLabel,
@@ -39,19 +40,20 @@ export function Inspector(): JSX.Element {
 
   const idReserved = idDraft.trim() !== '' && isReservedId(idDraft.trim());
 
-  if (diagram.unsupported) {
+  if (!diagram.header || diagram.unsupported) {
     return (
       <aside className="inspector">
         <h2>Inspector</h2>
         <p className="muted">
-          Visual editing supports <code>flowchart</code> / <code>graph</code> diagrams. This one is a{' '}
-          <code>{diagram.header}</code> — edit it as text or ask the agent.
+          Visual editing supports <code>flowchart</code> / <code>graph</code> diagrams. Edit this one as text or
+          ask the agent.
         </p>
       </aside>
     );
   }
 
   if (node) {
+    const opaqueReference = hasOpaqueNodeReferences(source, node.id);
     return (
       <aside className="inspector">
         <h2>Node</h2>
@@ -69,7 +71,7 @@ export function Inspector(): JSX.Element {
           <div className="row">
             <input value={idDraft} onChange={(e) => setIdDraft(e.target.value)} />
             <button
-              disabled={idDraft === node.id || idDraft.trim() === '' || idReserved}
+              disabled={idDraft === node.id || idDraft.trim() === '' || idReserved || opaqueReference}
               onClick={() => {
                 setSource(renameNodeId(source, node.id, idDraft.trim()));
                 select({ kind: 'node', id: idDraft.trim() });
@@ -79,6 +81,9 @@ export function Inspector(): JSX.Element {
             </button>
           </div>
           {idReserved && <span className="field-error">“{idDraft.trim()}” is a Mermaid keyword</span>}
+          {opaqueReference && (
+            <span className="field-error">Rename unavailable: this id is used by source-only Mermaid syntax.</span>
+          )}
         </label>
 
         <label>
@@ -126,6 +131,8 @@ export function Inspector(): JSX.Element {
 
         <button
           className="danger"
+          disabled={opaqueReference}
+          title={opaqueReference ? 'Delete unavailable while source-only syntax references this node' : undefined}
           onClick={() => {
             setSource(deleteNode(source, node.id));
             select({ kind: 'none' });
