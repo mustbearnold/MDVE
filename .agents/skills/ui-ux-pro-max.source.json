@@ -1,0 +1,8 @@
+{
+  "source": "nextlevelbuilder/ui-ux-pro-max-skill",
+  "release": "v2.11.3",
+  "resolvedCommit": "4857a2c5ef989794751a0f66b8545a4a49566286",
+  "skillPath": ".claude/skills/ui-ux-pro-max",
+  "installedWith": "codex-skill-installer",
+  "installedAt": "2026-07-28"
+}
