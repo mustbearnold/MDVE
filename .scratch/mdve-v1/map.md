@@ -26,6 +26,7 @@ A build-ready v1 strategy and release plan for MDVE as a trustworthy local Merma
 - [Choose the session and conversation continuity model](issues/04-choose-session-and-conversation-model.md) — Organize a flat library of durable Diagrams, each with one source/history timeline and multiple persistent Conversations; make archive reversible and keep provider-thread identity distinct from the transcript.
 - [Choose the v1 structured-diagram boundary](issues/06-choose-v1-structured-diagram-boundary.md) — Keep trustworthy structured visual editing flowchart/graph-only; other Mermaid grammars remain source-only, and unsafe mutations stop at opaque syntax rather than partially rewriting it.
 - [Choose the v1 installation, update, and adoption path](issues/07-choose-v1-installation-update-and-adoption-path.md) — Deliver one versioned npm package with a global `mdve` executable, explicit stable/prerelease channels, version-pinned rollback, redacted diagnostics, and a strict rule that package lifecycle operations never mutate or delete `~/.mdve` data.
+- [Choose the v1 agent-provider boundary](issues/08-choose-v1-agent-provider-boundary.md) — Keep v1 Codex-only, bind every Conversation to one Agent provider and opaque provider-thread identity, and require a new Conversation from the current durable Diagram revision for any future provider change.
 
 ## Not yet specified
 

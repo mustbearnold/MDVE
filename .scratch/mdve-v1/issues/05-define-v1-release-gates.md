@@ -14,5 +14,9 @@ Which measurable product, reliability, accessibility, performance, and installat
 - The production bundle warns about JavaScript chunks over 500 kB.
 - Live DOM inspection shows several icon-only controls expose symbols rather than descriptive accessible names.
 - Core risks include file durability, agent cancellation/recovery, parser fidelity, responsive use, and a reproducible install path.
+- The Codex-only contract requires compatibility gates for app-server schema and
+  initialization, ChatGPT auth state, model discovery, new and resumed threads,
+  streamed turn persistence, interruption, unavailable-thread recovery, and
+  immutable Conversation-to-provider binding.
 
 ## Comments
