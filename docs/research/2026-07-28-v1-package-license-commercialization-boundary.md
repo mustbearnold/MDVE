@@ -24,9 +24,11 @@ interface, platform, or language or is free of charge. It does not prohibit inde
 developed competitors or limit fair-use rights.
 
 Perimeter also grants a patent license covering licensable claims that use of the software
-would infringe. That patent license ends if the recipient or their company makes a written
-patent-infringement claim about the software. Counsel must assess that patent-defense
-termination as a material condition of the chosen license.
+would infringe. That patent license ends if the recipient makes a written claim that the
+software infringes or contributes to infringement of a patent. If the recipient's company
+makes such a claim, the recipient's patent license ends only for work on behalf of that
+company. Counsel must assess that patent-defense termination as a material condition of
+the chosen license.
 
 Perimeter is a standardized non-open-source license, not an OSI-approved license. It does
 not make the private repository or absent preferred source public. MDVE must describe v1

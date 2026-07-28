@@ -51,10 +51,12 @@ language, or price. It does not prohibit independently developed competition
 that does not use the artifact within that boundary, or limit fair-use rights.
 
 Perimeter also grants a patent license covering licensable claims that use of
-the artifact would infringe, and terminates that patent license if the recipient
-or their company makes a written patent-infringement claim about the software.
-That patent-defense condition is a material part of the selected boundary, not
-boilerplate to omit from release review.
+the artifact would infringe. That patent license ends if the recipient makes a
+written claim that the software infringes or contributes to infringement of a
+patent. If the recipient's company makes such a claim, the recipient's patent
+license ends only for work on behalf of that company. That patent-defense
+condition is a material part of the selected boundary, not boilerplate to omit
+from release review.
 
 The package metadata must use:
 
@@ -107,7 +109,7 @@ before paid or enterprise positioning.
 
 - Inspect both `npm pack --dry-run` and the produced tarball against an exact
   allowlist, including source maps, secrets, `LICENSE.md`, notices, README, and
-  build metadata. The current dry run exposes 158 development and planning
+  build metadata. The current dry run still exposes development and planning
   files, so the existing package is not the selected release artifact.
 - Recheck the unscoped `mdve` registry name immediately before release. It
   returned `E404` on 2026-07-28, which is current availability evidence, not a
