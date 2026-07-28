@@ -878,10 +878,6 @@ button.danger:hover:not(:disabled) {
     display: flex;
   }
 
-  .pane-side.pane-active {
-    display: flex;
-  }
-
   .pane-side .side-view {
     display: none;
     flex: 1;
