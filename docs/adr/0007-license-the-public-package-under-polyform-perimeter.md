@@ -1,0 +1,3 @@
+# License the public package under PolyForm Perimeter
+
+MDVE v1 will publish a free-of-charge npm artifact under the PolyForm Perimeter License 1.0.1 while its source repository remains private. Perimeter gives recipients broad personal and internal commercial use plus noncompeting modification and distribution, preserving local ownership without letting a public artifact become a substitute product; exact artifact scope and notices require qualified legal approval before publication, and the full boundary is recorded in [the package license and commercialization decision](../../.scratch/mdve-v1/issues/09-choose-v1-package-license-and-commercialization-boundary.md).
