@@ -21,7 +21,7 @@ Canonical product vocabulary for MDVE. Decision rationale lives in the linked Wa
 - **Source-only Diagram** — A Diagram that renders and remains editable through source or Codex but does not qualify for structured visual mutation. In v1, every Mermaid grammar except `flowchart` and `graph` is source-only.
 - **Agent transformation** — A Codex turn that reads and edits `diagram.mmd` inside its Diagram workspace and reports progress to the workspace.
 - **Local web application** — MDVE's v1 delivery form: an `mdve` CLI starts one loopback-only process that serves the version-matched UI and API from a stable local origin and opens the system browser. It is local software, not a hosted service.
-- **Release artifact** — The versioned npm package that installs the `mdve` executable and contains its version-matched launcher, server, and production UI. Package lifecycle operations affect installed code, never Diagram data under `~/.mdve`.
+- **Release artifact** — The versioned npm package that installs the `mdve` executable and contains its version-matched launcher, server, and production UI.
 
 ## Decision source
 
