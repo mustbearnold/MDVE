@@ -24,6 +24,7 @@ Canonical product vocabulary for MDVE. Decision rationale lives in the linked Wa
 - **Agent transformation** — A Codex turn that reads and edits `diagram.mmd` inside its Diagram workspace and reports progress to the workspace.
 - **Local web application** — MDVE's v1 delivery form: an `mdve` CLI starts one loopback-only process that serves the version-matched UI and API from a stable local origin and opens the system browser. It is local software, not a hosted service.
 - **Release artifact** — The versioned npm package that installs the `mdve` executable and contains its version-matched launcher, server, and production UI.
+- **Pre-commercial release** — A public, free-of-charge MDVE release with no billing or license-entitlement mechanism.
 
 ## Decision source
 
@@ -34,3 +35,4 @@ Canonical product vocabulary for MDVE. Decision rationale lives in the linked Wa
 - [Choose the v1 structured-diagram boundary](.scratch/mdve-v1/issues/06-choose-v1-structured-diagram-boundary.md)
 - [Choose the v1 installation, update, and adoption path](.scratch/mdve-v1/issues/07-choose-v1-installation-update-and-adoption-path.md)
 - [Choose the v1 agent-provider boundary](.scratch/mdve-v1/issues/08-choose-v1-agent-provider-boundary.md)
+- [Choose the v1 package license and commercialization boundary](.scratch/mdve-v1/issues/09-choose-v1-package-license-and-commercialization-boundary.md)

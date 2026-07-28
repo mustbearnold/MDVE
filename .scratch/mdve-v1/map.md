@@ -27,11 +27,11 @@ A build-ready v1 strategy and release plan for MDVE as a trustworthy local Merma
 - [Choose the v1 structured-diagram boundary](issues/06-choose-v1-structured-diagram-boundary.md) — Keep trustworthy structured visual editing flowchart/graph-only; other Mermaid grammars remain source-only, and unsafe mutations stop at opaque syntax rather than partially rewriting it.
 - [Choose the v1 installation, update, and adoption path](issues/07-choose-v1-installation-update-and-adoption-path.md) — Deliver one versioned npm package with a global `mdve` executable, explicit stable/prerelease channels, version-pinned rollback, redacted diagnostics, and a strict rule that package lifecycle operations never mutate or delete `~/.mdve` data.
 - [Choose the v1 agent-provider boundary](issues/08-choose-v1-agent-provider-boundary.md) — Keep v1 Codex-only, bind every Conversation to one Agent provider and opaque provider-thread identity, and require a new Conversation from the current durable Diagram revision for any future provider change.
+- [Choose the v1 package license and commercialization boundary](issues/09-choose-v1-package-license-and-commercialization-boundary.md) — Publish a free-of-charge, pre-commercial npm artifact under counsel-reviewed PolyForm Perimeter 1.0.1 while source stays private, entitlements stay absent, and paid or enterprise Codex positioning waits for explicit clearance.
 
 ## Not yet specified
 
-- No known untracked fog; package visibility, license, and commercialization are
-  now an explicit decision ticket.
+- No known untracked fog.
 
 ## Out of scope
 
