@@ -1,5 +1,8 @@
 # MDVE — Mermaid Diagram Visual Editor
 
+[![CI](https://github.com/mustbearnold/MDVE/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/mustbearnold/MDVE/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/mustbearnold/MDVE/actions/workflows/codeql.yml/badge.svg?branch=master)](https://github.com/mustbearnold/MDVE/actions/workflows/codeql.yml)
+
 A local Linux app for editing Mermaid diagrams three ways at once: as text, by
 clicking the rendered diagram, and by asking an LLM agent that reads and edits
 the diagram itself.
@@ -21,7 +24,8 @@ built UI on a single port:
 npm run build && npm start
 ```
 
-Requirements: Node 20+, and `codex` on your `PATH`, logged in (`codex login`).
+Requirements: Node 22 or 24 LTS, and `codex` on your `PATH`, logged in
+(`codex login`).
 
 ## Layout
 
