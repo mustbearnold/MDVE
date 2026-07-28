@@ -43,10 +43,12 @@ PolyForm Perimeter permits use, modification, new works, and distribution for
 any purpose except providing others a product that competes with MDVE. That
 gives an individual or company broad personal and internal commercial use
 without a seat limit, payment condition, license key, or online entitlement,
-while restricting a recipient from using the licensed artifact to provide a
-substitute product even under another interface, platform, language, or price.
-It does not prohibit independently developed competitors or limit fair-use
-rights.
+while restricting a recipient from providing others a product that competes
+with MDVE. Under the license's explicit competition rule, a product competes
+when the recipient uses the licensed artifact to market it as a substitute for
+MDVE's functionality or value, even under another interface, platform,
+language, or price. It does not prohibit independently developed competition
+that does not use the artifact within that boundary, or limit fair-use rights.
 
 Perimeter also grants a patent license covering licensable claims that use of
 the artifact would infringe, and terminates that patent license if the recipient
@@ -124,7 +126,7 @@ before paid or enterprise positioning.
 
 | Option | User rights | Commercial boundary | Decision |
 | --- | --- | --- | --- |
-| PolyForm Perimeter 1.0.1, free-of-charge v1 | Broad personal and business use, changes, noncompeting distribution, and a patent grant with patent-defense termination | Restricts using the artifact to provide substitute products without adding entitlements | **Choose, subject to counsel** |
+| PolyForm Perimeter 1.0.1, free-of-charge v1 | Broad personal and business use, changes, noncompeting distribution, and a patent grant with patent-defense termination | Restricts providing a competing product; using the artifact to market a substitute is the explicit competition test | **Choose, subject to counsel** |
 | PolyForm Internal Use 1.0.0 | Internal business use and changes; no distribution; unrelated personal use is not explicit | Strong control but too narrow for the target user | Reject |
 | Custom proprietary artifact license | Can express every desired edge exactly | Bespoke drafting and enforcement risk before product proof | Fallback only if counsel finds a material Perimeter mismatch |
 | Elastic-2.0 or Apache-2.0 | Broad use, changes, and redistribution | Allows competing local redistribution; Apache also commits the artifact to an open-source model when preferred source is published | Defer unless the business model deliberately changes |
@@ -160,8 +162,8 @@ usable grant instead of defining one.
 The chosen boundary gives up an open-source adoption claim and delays revenue.
 In return, recipients get broad, explicit local-use rights with no entitlement
 dependency, the private repository and restriction on using the artifact to
-provide a direct substitute remain meaningful, and MDVE can learn from real v1
-use before choosing a paid model.
+market and provide a competing substitute remain meaningful, and MDVE can learn
+from real v1 use before choosing a paid model.
 
 Confidence: **high (0.90)** on the product boundary and **not asserted** on final
 legal sufficiency until qualified counsel accepts the exact release terms.
