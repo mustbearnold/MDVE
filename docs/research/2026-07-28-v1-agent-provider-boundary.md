@@ -34,7 +34,7 @@ Primary sources:
 Adding a provider now would not be a dropdown-only feature. It adds authentication, licensing,
 model-catalog, workspace-tool, streaming, cancellation, resume, recovery, transcript, and switch
 semantics. The current product has only one implemented provider and one provider thread id per
-session. The lower-risk v1 investment is to make the Codex integration depend on an official
+Diagram workspace. The lower-risk v1 investment is to make the Codex integration depend on an official
 contract rather than multiplying adapters before the Conversation model is implemented.
 
 ## Standardize v1 on Codex app-server
