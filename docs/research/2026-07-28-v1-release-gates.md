@@ -160,7 +160,7 @@ Vite's `build.chunkSizeWarningLimit` defaults to 500 kB and compares uncompresse
 
 **[P]** Each release stores the production manifest plus raw and gzip size of every initial and async asset, identifies which dependencies dominate any chunk over 500 kB, and records whether the chunk is initial-route or deferred. Raising the warning limit merely to hide the current message is a gate failure.
 
-**[I]** A chunk over 500 kB is not automatically a release failure, and a chunk under 500 kB is not a performance pass. A large chunk may ship only when the measured gates above pass and the release record explains why splitting or lazy-loading would not improve the initial workflow. Conversely, a smaller bundle that misses LCP, interaction, or startup budgets still fails. Bundle deltas are diagnostic evidence; observed user outcomes are the blocking thresholds.
+**[I]** Vite does not make a chunk over 500 kB an automatic release failure, and a chunk under 500 kB is not a performance pass. MDVE separately selects a stricter project gate: the initial application JavaScript chunk must be at most 500 kB minified. A deferred Mermaid grammar chunk above the advisory may ship only when the measured gates pass and the release record explains its dependency makeup and why splitting or further lazy-loading would not improve an exercised workflow. Conversely, a smaller bundle that misses LCP, interaction, or startup budgets still fails. Bundle deltas remain diagnostic evidence; the initial-cap decision and measured user outcomes are the blocking thresholds.
 
 ## 5. Node support gate
 

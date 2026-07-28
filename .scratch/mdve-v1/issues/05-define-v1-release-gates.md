@@ -51,9 +51,10 @@ current stable Chromium and Firefox versions recorded in the evidence bundle:
 
 1. Clean first run, create, open/import, rename, source edit, flowchart structured
    edit, export, archive, restore, restart, and reopen all preserve the expected
-   Diagram identity and source. Startup creates at most one starter across
-   remounts/retries; Recent, All diagrams, Archived, title/source search, duplicate
-   titles, activity ordering, and reversible library lifecycle follow the adopted
+   Diagram identity and source. When no non-archived Diagram exists, startup
+   creates exactly one starter and never creates another across remounts or
+   retries; Recent, All diagrams, Archived, title/source search, duplicate titles,
+   activity ordering, and reversible library lifecycle follow the adopted
    contract. Source-only grammars render and remain editable while every
    structured control and mutation path stays unavailable.
 2. Save, conflict, recovery-draft, recovery-point, restore, history-degraded,
