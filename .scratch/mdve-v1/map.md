@@ -25,10 +25,12 @@ A build-ready v1 strategy and release plan for MDVE as a trustworthy local Merma
 - [Choose the v1 delivery form](issues/03-choose-v1-delivery-form.md) — Ship one loopback-only local web application launched by an `mdve` CLI; defer a desktop wrapper until a proven native-only need justifies a second release surface.
 - [Choose the session and conversation continuity model](issues/04-choose-session-and-conversation-model.md) — Organize a flat library of durable Diagrams, each with one source/history timeline and multiple persistent Conversations; make archive reversible and keep provider-thread identity distinct from the transcript.
 - [Choose the v1 structured-diagram boundary](issues/06-choose-v1-structured-diagram-boundary.md) — Keep trustworthy structured visual editing flowchart/graph-only; other Mermaid grammars remain source-only, and unsafe mutations stop at opaque syntax rather than partially rewriting it.
+- [Choose the v1 installation, update, and adoption path](issues/07-choose-v1-installation-update-and-adoption-path.md) — Deliver one versioned npm package with a global `mdve` executable, explicit stable/prerelease channels, version-pinned rollback, redacted diagnostics, and a strict rule that package lifecycle operations never mutate or delete `~/.mdve` data.
 
 ## Not yet specified
 
-- Monetization, if any, after repeated-use value and distribution costs are known.
+- No known untracked fog; package visibility, license, and commercialization are
+  now an explicit decision ticket.
 
 ## Out of scope
 

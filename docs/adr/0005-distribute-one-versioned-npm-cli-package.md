@@ -1,0 +1,3 @@
+# Distribute one versioned npm CLI package
+
+MDVE v1 uses one npm package to install the `mdve` executable together with its compiled server and production UI, while keeping installed code separate from `~/.mdve` user data. npm gives the chosen Linux Codex user one platform-neutral install, explicit release channels, and version-pinned rollback; self-contained binaries, distro packages, and a bespoke installer would create additional build, signing, and update surfaces before adoption proves they are necessary. The full lifecycle and safety contract is recorded in [the installation decision](../../.scratch/mdve-v1/issues/07-choose-v1-installation-update-and-adoption-path.md).
