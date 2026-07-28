@@ -33,7 +33,8 @@ The gates are categorical, not a score. Product polish cannot offset a durabilit
 failure; broad tests cannot offset an inaccessible critical action; a fast
 checkout cannot offset a broken installed package. A failed gate blocks the
 `v1.0.0` tag and npm `latest` promotion until a new candidate passes the complete
-affected matrix. Deadlines, demos, and issue labels are not waivers.
+matrix again. Evidence never carries forward across a changed commit or tarball.
+Deadlines, demos, and issue labels are not waivers.
 
 GitHub issue [#6](https://github.com/mustbearnold/MDVE/issues/6) is an exception
 only for merging planning pull requests whose Actions job fails before executing
@@ -50,8 +51,11 @@ current stable Chromium and Firefox versions recorded in the evidence bundle:
 
 1. Clean first run, create, open/import, rename, source edit, flowchart structured
    edit, export, archive, restore, restart, and reopen all preserve the expected
-   Diagram identity and source. Source-only grammars render and remain editable,
-   while every structured control and mutation path stays unavailable.
+   Diagram identity and source. Startup creates at most one starter across
+   remounts/retries; Recent, All diagrams, Archived, title/source search, duplicate
+   titles, activity ordering, and reversible library lifecycle follow the adopted
+   contract. Source-only grammars render and remain editable while every
+   structured control and mutation path stays unavailable.
 2. Save, conflict, recovery-draft, recovery-point, restore, history-degraded,
    agent-running, stopped, failed, interrupted, and cannot-resume states expose
    the truthful action required by their contracts; no critical outcome exists
@@ -60,8 +64,10 @@ current stable Chromium and Firefox versions recorded in the evidence bundle:
    version-matched schema compatibility, `account/read`, `model/list`, new and
    resumed threads, persisted streamed progress and outcomes, interruption, an
    unavailable provider thread, and creation of a new Conversation from the
-   current durable revision. Every Conversation remains immutably bound to Codex
-   and its own opaque provider-thread identity.
+   current durable revision. Multiple Conversations, archive/restore, last-selected
+   restoration, revision-gap disclosure, and a read-only cannot-resume transcript
+   all preserve identity and evidence. Every Conversation remains immutably bound
+   to Codex and its own opaque provider-thread identity.
 4. The production server binds only to the configured loopback address, rejects
    unauthenticated API calls and invalid Host or Origin values, exchanges the
    one-use bootstrap secret for the intended HttpOnly SameSite session, and emits
@@ -94,19 +100,26 @@ percentage and includes:
    concurrent edits, and agent write leases never resolve through silent
    last-write-wins. The losing source remains inspectable, and restore always
    creates a new durable revision without deleting prior recovery evidence.
-3. A fixed-seed 1,000-operation soak across edit, save, switch, crash, restart,
+3. Recovery-ledger tests prove the 30-second inactivity and five-minute sustained
+   editing checkpoints; every required pre/post import, restore, agent-turn, and
+   Diagram-switch point; origin/checksum metadata; identical-source deduplication;
+   retention of every point for 30 days and at least the newest 100; and cleanup
+   that never removes the current source. A failed routine history write exposes
+   **Saved — history unavailable**, while a missing required pre-change point
+   blocks the agent turn, import, or restore.
+4. A fixed-seed 1,000-operation soak across edit, save, switch, crash, restart,
    agent stop/failure, archive, and restore records zero lost acknowledged
    revisions, zero false **Saved** states, zero simultaneous write leases for one
    Diagram, and zero unreconciled persisted `running` turns after restart.
-4. The flowchart corpus covers supported shapes/arrows, chains, labels, comments,
+5. The flowchart corpus covers supported shapes/arrows, chains, labels, comments,
    subgraphs, directives, reserved ids, opaque statements, imports, undo/redo,
    recovery, and agent changes. Each structured mutation proves its intended
    semantic change and byte preservation outside the changed statement;
-   unsupported and invalid grammars prove zero structured source mutation.
-5. HTTP API and Conversation contract tests cover validation, conditional writes,
-   authentication, lifecycle transitions, transcript/revision persistence,
-   cancellation races, unavailable-thread recovery, and provider-binding
-   rejection. Test fixtures contain no live user data or credentials.
+   unsupported and invalid grammars prove zero structured source mutation. The
+   same release suite's HTTP API and Conversation contracts cover validation,
+   conditional writes, authentication, lifecycle transitions, transcript/revision
+   persistence, cancellation races, unavailable-thread recovery, and
+   provider-binding rejection without live user data or credentials.
 
 Any nondeterministic failure invalidates the ten-run sequence. It must be
 explained and fixed before the count restarts; repeatedly running a flaky suite
@@ -114,29 +127,45 @@ until green is a failed gate.
 
 ### Gate 3: accessibility
 
-Every release-critical state and journey must conform to applicable WCAG 2.2
-Level A and AA criteria. Automated checks are necessary but not sufficient:
+Every application-owned full page, responsive variation, and page in each
+complete critical process must conform to applicable WCAG 2.2 Level A and AA
+criteria. Automated checks are necessary but not sufficient:
 
 1. Automated accessibility scans report zero detected WCAG 2.2 A/AA violations
    across Welcome, Diagram library, source editor, preview, Inspector, History,
    conflict/recovery, Conversation, error/degraded, archive, and install/help
    states in both supported browsers.
-2. Keyboard-only use completes every critical journey. Focus order follows the
-   visual task order; focus is never trapped or lost after dialogs, menus,
-   rendering, Diagram switches, or stopped turns; and every focusable element has
-   an always-visible focus indicator.
-3. Every control has a descriptive accessible name plus correct role, state,
+2. A criterion-by-criterion manual A/AA matrix records every tested full page,
+   state, responsive variation, complete process, browser, viewport, input method,
+   assistive technology, tester/date, and the rationale for each not-applicable
+   judgment. Every applicable criterion passes.
+3. Keyboard-only and Orca use in Firefox complete every critical journey. Focus
+   order follows the visual task order; focus is never trapped or lost after
+   dialogs, menus, rendering, Diagram switches, or stopped turns; and every
+   focusable element has an always-visible focus indicator.
+4. Every control has a descriptive accessible name plus correct role, state,
    value, disabled reason, and error relationship. Symbol-only names such as
    `+`, `−`, `↶`, `↷`, `×`, or `↺` are failures even when a mouse tooltip exists.
-4. Text and controls retain content and operation at 200% zoom and at a 320 CSS
-   pixel viewport. Two-dimensional scrolling is allowed inside the Diagram
+5. Text and controls retain content and operation at 200% text zoom, 400% browser
+   zoom, and a 320 CSS pixel viewport. Two-dimensional scrolling is allowed inside
+   the Diagram
    canvas, but the surrounding application, actions, errors, and recovery UI may
    not overlap, disappear, or require two-axis scrolling.
-5. Manual Orca checks in Firefox verify landmark/navigation structure, names and
-   state changes, save/recovery and agent-progress announcements, error movement,
-   dialog semantics, and a keyboard-equivalent path for every pointer-only graph
-   action. Contrast, target size, reduced motion, and high-contrast/focus states
-   pass their applicable criteria.
+
+The manual pass additionally verifies landmark/navigation structure, names and
+state changes, save/recovery and agent-progress announcements, error movement,
+dialog semantics, contrast, text spacing, 24-by-24 CSS-pixel targets or valid
+exceptions, single-pointer alternatives to dragging, reduced motion,
+high-contrast/forced-colors behavior, and a keyboard-equivalent path for every
+pointer-only graph action.
+
+Arbitrary imported Mermaid can contain user-selected text, colors, links, and
+structure, so MDVE does not claim that every possible rendered Diagram conforms.
+The shipped application, examples, and generated transformations must pass; the
+complete Mermaid source remains a keyboard- and screen-reader-accessible
+equivalent; and user-authored preview content may not block access to application
+chrome or the rest of a complete process. The published conformance statement
+names this content boundary and the exact tested technologies and date.
 
 The evidence bundle records the automated rule set, browser/accessibility-tool
 versions, tested states, manual checklist, and DOM/accessibility-tree evidence.
@@ -190,11 +219,16 @@ The exact tarball promoted to `latest` must pass the installation matrix on Node
    `.scratch`, `.agents`, repository workflow, development source/configuration,
    source map, credential, local path, or user data unless individually reviewed
    and explicitly allowlisted.
-2. A clean temporary global prefix installs without the repository or development
-   dependencies. `mdve`, `mdve --no-open`, `mdve version`, `mdve doctor`, and
-   redacted `mdve doctor --json` work; the package UI/server versions match; and
-   the stable origin, bootstrap authentication, create/edit/save/reopen loop, and
-   offline non-agent editing pass from the installed artifact.
+2. Clean temporary global prefixes install without the repository or development
+   dependencies on the declared floor and latest patch of both Node 22 and Node 24
+   LTS. `mdve`, `mdve --no-open`, `mdve version`, `mdve doctor`, and redacted
+   `mdve doctor --json` work; the package UI/server versions match; and the stable
+   origin, bootstrap authentication, create/edit/save/reopen loop, and offline
+   non-agent editing pass from the installed artifact. Negative preflight tests
+   reject unsupported Node or non-Linux systems before touching user data and give
+   one actionable error for a missing/unsupported/logged-out Codex runtime, an
+   unwritable data directory, and an occupied stable port without silently moving
+   origins.
 3. Update from the last `next` candidate, explicit rollback to it, reinstall, and
    uninstall preserve `~/.mdve`, Diagram revisions, recovery drafts/points,
    Conversations, and provider continuity. An older incompatible binary refuses
@@ -235,8 +269,8 @@ index. It contains:
   private-source provenance, without relabelling a failed gate as a limitation;
   and
 - a final declaration that every gate passed on the same candidate with no
-  hidden rerun, waived blocker, source publication, telemetry, paid entitlement,
-  or claim beyond the exercised support matrix.
+  hidden rerun, waived blocker, source publication by the release process,
+  telemetry, paid entitlement, or claim beyond the exercised support matrix.
 
 ### Current readiness finding
 
