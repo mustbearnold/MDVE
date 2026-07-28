@@ -3,6 +3,7 @@ import mermaid from 'mermaid';
 
 import { reservedIdsIn } from '../mermaid/parse';
 import { useStore } from '../state/store';
+import { Icon } from './Icon';
 
 mermaid.initialize({
   startOnLoad: false,
@@ -121,6 +122,20 @@ export function Preview(): JSX.Element {
             setContent({ width: vb.width, height: vb.height });
           }
         }
+        hostRef.current.querySelectorAll('g.node').forEach((nodeElement) => {
+          const nodeId = nodeIdOf(nodeElement);
+          if (!nodeId) return;
+          const node = diagram.nodes.find((candidate) => candidate.id === nodeId);
+          const accessibleLabel =
+            node?.label
+              .replace(/<br\s*\/?>/gi, ' ')
+              .replace(/<[^>]+>/g, ' ')
+              .replace(/\s+/g, ' ')
+              .trim() || nodeElement.textContent?.replace(/\s+/g, ' ').trim() || nodeId;
+          nodeElement.setAttribute('role', 'button');
+          nodeElement.setAttribute('tabindex', '0');
+          nodeElement.setAttribute('aria-label', `Node: ${accessibleLabel}`);
+        });
         // Rendered links are 1–2px wide, which is a miserable click target.
         // Shadow each one with a fat transparent path that takes the clicks.
         hostRef.current.querySelectorAll('.edgePaths path').forEach((path) => {
@@ -132,6 +147,12 @@ export function Preview(): JSX.Element {
           hit.removeAttribute('marker-end');
           hit.removeAttribute('style');
           hit.id = `hit-${path.id}`;
+          const ends = edgeEndsOf(path, new Set(diagram.nodes.map((node) => node.id)));
+          if (ends) {
+            hit.setAttribute('role', 'button');
+            hit.setAttribute('tabindex', '0');
+            hit.setAttribute('aria-label', `Link: ${ends.from} to ${ends.to}`);
+          }
           path.parentElement?.insertBefore(hit, path);
         });
         if (!manualViewRef.current) fitToView();
@@ -147,7 +168,7 @@ export function Preview(): JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [source, setRenderError, fitToView]);
+  }, [source, diagram, setRenderError, fitToView]);
 
   // Refit when the pane itself changes size.
   useEffect(() => {
@@ -221,6 +242,32 @@ export function Preview(): JSX.Element {
     [zoomBy],
   );
 
+  const onKeyDown = useCallback(
+    (event: React.KeyboardEvent) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      const target = event.target as Element;
+      const node = target.closest('g.node');
+      if (node) {
+        const id = nodeIdOf(node);
+        if (id) {
+          event.preventDefault();
+          select({ kind: 'node', id });
+        }
+        return;
+      }
+      const link = target.closest('path.mdve-hit');
+      if (!link) return;
+      const knownIds = new Set(diagram.nodes.map((candidate) => candidate.id));
+      const ends = edgeEndsOf(link, knownIds);
+      const edge = ends && diagram.edges.find((candidate) => candidate.from === ends.from && candidate.to === ends.to);
+      if (edge) {
+        event.preventDefault();
+        select({ kind: 'edge', key: edge.key });
+      }
+    },
+    [diagram, select],
+  );
+
   const onPointerDown = (event: React.PointerEvent) => {
     if (event.button !== 0 || (event.target as Element).closest('g.node')) return;
     dragRef.current = { x: event.clientX, y: event.clientY, ox: view.x, oy: view.y };
@@ -245,29 +292,36 @@ export function Preview(): JSX.Element {
 
   return (
     <div className="preview">
-      <div className="preview-tools">
-        <button onClick={() => zoomBy(1.2)} title="Zoom in">
-          +
+      <div className="preview-tools" aria-label="Preview controls">
+        <button className="icon-button" onClick={() => zoomBy(1.2)} title="Zoom in" aria-label="Zoom in">
+          <Icon name="zoom-in" />
         </button>
-        <button onClick={() => zoomBy(1 / 1.2)} title="Zoom out">
-          −
+        <button className="icon-button" onClick={() => zoomBy(1 / 1.2)} title="Zoom out" aria-label="Zoom out">
+          <Icon name="zoom-out" />
         </button>
         <button
+          className="icon-button"
           onClick={() => {
             manualViewRef.current = false;
             fitToView();
           }}
           title="Fit to view"
+          aria-label="Fit diagram to view"
         >
-          ⤢
+          <Icon name="fit" />
         </button>
-        <span className="zoom-label">{Math.round(view.scale * 100)}%</span>
+        <span className="zoom-label" aria-label={`Zoom ${Math.round(view.scale * 100)} percent`}>
+          {Math.round(view.scale * 100)}%
+        </span>
       </div>
 
       <div
         className="preview-canvas"
         ref={canvasRef}
+        role="region"
+        aria-label="Diagram preview"
         onClick={onClick}
+        onKeyDown={onKeyDown}
         onWheel={onWheel}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}

@@ -1,11 +1,17 @@
-import { useRef } from 'react';
+import { useRef, type RefObject } from 'react';
 
 import { addNode } from '../mermaid/mutate';
 import { setDirection } from '../mermaid/mutate';
 import { supportsStructuredEditing } from '../mermaid/parse';
 import { useStore } from '../state/store';
+import { Icon } from './Icon';
 
-const DIRECTIONS = ['TD', 'LR', 'BT', 'RL'];
+const DIRECTIONS = [
+  { value: 'TD', label: 'Top to bottom' },
+  { value: 'LR', label: 'Left to right' },
+  { value: 'BT', label: 'Bottom to top' },
+  { value: 'RL', label: 'Right to left' },
+];
 
 function download(name: string, content: string, type: string): void {
   const url = URL.createObjectURL(new Blob([content], { type }));
@@ -34,7 +40,13 @@ export function Toolbar(): JSX.Element {
   const saveStatus = useStore((s) => s.saveStatus);
   const retrySave = useStore((s) => s.retrySave);
   const fileRef = useRef<HTMLInputElement>(null);
+  const diagramMenuRef = useRef<HTMLDetailsElement>(null);
+  const fileMenuRef = useRef<HTMLDetailsElement>(null);
   const structuredEditingAvailable = supportsStructuredEditing(diagram, renderError);
+
+  const closeMenu = (ref: RefObject<HTMLDetailsElement | null>) => {
+    if (ref.current) ref.current.open = false;
+  };
 
   const exportSvg = () => {
     const svg = document.querySelector('.preview-svg svg');
@@ -55,7 +67,7 @@ export function Toolbar(): JSX.Element {
       canvas.height = box.height * scale;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
-      ctx.fillStyle = '#0d1117';
+      ctx.fillStyle = '#0b0f14';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       canvas.toBlob((blob) => {
@@ -78,10 +90,20 @@ export function Toolbar(): JSX.Element {
   };
 
   return (
-    <header className="toolbar">
-      <div className="toolbar-group">
-        <strong className="brand">MDVE</strong>
+    <header className="toolbar" aria-label="Diagram toolbar">
+      <div className="toolbar-context">
+        <div className="product-identity">
+          <h1 className="brand" title="Mermaid Diagram Visual Editor">
+            MDVE
+          </h1>
+          <span className="product-name">Mermaid editor</span>
+        </div>
+        <label className="sr-only" htmlFor="diagram-select">
+          Diagram
+        </label>
         <select
+          className="diagram-select"
+          id="diagram-select"
           value={session?.id ?? ''}
           onChange={(e) => void loadSession(e.target.value)}
           title="Open diagram"
@@ -92,30 +114,22 @@ export function Toolbar(): JSX.Element {
             </option>
           ))}
         </select>
-        <button onClick={() => void newSession()}>New</button>
-        <button
-          onClick={() => {
-            const title = prompt('Diagram name', session?.title ?? '');
-            if (title) void renameSession(title);
-          }}
-        >
-          Rename
-        </button>
         <span className={`save-status save-${saveStatus.state}`} aria-live="polite">
           {saveStatus.state === 'error' ? (
             <button className="save-retry" onClick={retrySave} title={saveStatus.message}>
               Save failed · Retry
             </button>
           ) : saveStatus.state === 'saving' ? (
-            'Saving…'
+            <><span className="status-dot" />Saving…</>
           ) : (
-            'Saved'
+            <><span className="status-dot" />Saved</>
           )}
         </span>
       </div>
 
-      <div className="toolbar-group">
+      <div className="toolbar-group toolbar-edit" aria-label="Edit diagram">
         <button
+          className="button-primary"
           disabled={!structuredEditingAvailable}
           title={!structuredEditingAvailable ? 'Structured editing requires a valid flowchart / graph diagram' : undefined}
           onClick={() => {
@@ -124,47 +138,103 @@ export function Toolbar(): JSX.Element {
             if (id) select({ kind: 'node', id });
           }}
         >
-          + Node
+          <Icon name="plus" />
+          Node
         </button>
-        <select
-          value={diagram.direction}
-          disabled={!structuredEditingAvailable}
-          onChange={(e) => setSource(setDirection(source, e.target.value))}
-          title="Layout direction"
-        >
-          {DIRECTIONS.map((d) => (
-            <option key={d} value={d}>
-              {d}
-            </option>
-          ))}
-        </select>
-        <button onClick={undo} disabled={past.length === 0} title="Undo">
-          ↶
+        <label className="direction-control">
+          <span>Flow</span>
+          <select
+            value={diagram.direction}
+            disabled={!structuredEditingAvailable}
+            onChange={(e) => setSource(setDirection(source, e.target.value))}
+            aria-label="Layout direction"
+          >
+            {DIRECTIONS.map((direction) => (
+              <option key={direction.value} value={direction.value}>
+                {direction.value} · {direction.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button className="icon-button" onClick={undo} disabled={past.length === 0} title="Undo" aria-label="Undo">
+          <Icon name="undo" />
         </button>
-        <button onClick={redo} disabled={future.length === 0} title="Redo">
-          ↷
+        <button className="icon-button" onClick={redo} disabled={future.length === 0} title="Redo" aria-label="Redo">
+          <Icon name="redo" />
         </button>
       </div>
 
-      <div className="toolbar-group toolbar-right">
-        <button onClick={() => fileRef.current?.click()}>Open .mmd</button>
-        <input
-          ref={fileRef}
-          type="file"
-          accept=".mmd,.mermaid,.txt"
-          hidden
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) void openFile(file);
-            e.target.value = '';
-          }}
-        />
-        <button onClick={() => download(`${session?.title ?? 'diagram'}.mmd`, source, 'text/plain')}>
-          Save .mmd
-        </button>
-        <button onClick={exportSvg}>SVG</button>
-        <button onClick={exportPng}>PNG</button>
-      </div>
+      <details className="toolbar-menu" ref={diagramMenuRef}>
+        <summary>Diagram</summary>
+        <div className="toolbar-menu-panel">
+          <button
+            onClick={() => {
+              closeMenu(diagramMenuRef);
+              void newSession();
+            }}
+          >
+            New diagram
+          </button>
+          <button
+            onClick={() => {
+              closeMenu(diagramMenuRef);
+              const title = prompt('Diagram name', session?.title ?? '');
+              if (title) void renameSession(title);
+            }}
+          >
+            Rename diagram
+          </button>
+        </div>
+      </details>
+
+      <details className="toolbar-menu toolbar-file" ref={fileMenuRef}>
+        <summary>File</summary>
+        <div className="toolbar-menu-panel toolbar-menu-panel-right">
+          <button
+            onClick={() => {
+              closeMenu(fileMenuRef);
+              fileRef.current?.click();
+            }}
+          >
+            Open Mermaid file
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".mmd,.mermaid,.txt"
+            hidden
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void openFile(file);
+              e.target.value = '';
+            }}
+          />
+          <button
+            onClick={() => {
+              closeMenu(fileMenuRef);
+              download(`${session?.title ?? 'diagram'}.mmd`, source, 'text/plain');
+            }}
+          >
+            Save Mermaid source
+          </button>
+          <button
+            onClick={() => {
+              closeMenu(fileMenuRef);
+              exportSvg();
+            }}
+          >
+            Export SVG
+          </button>
+          <button
+            onClick={() => {
+              closeMenu(fileMenuRef);
+              exportPng();
+            }}
+          >
+            Export PNG
+          </button>
+        </div>
+      </details>
     </header>
   );
 }

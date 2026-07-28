@@ -1,0 +1,35 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+
+import { WORKSPACE_VIEWS, WorkspaceTabs } from './WorkspaceTabs';
+
+test('workspace tabs expose every narrow-layout pane with one active view', () => {
+  const selections: string[] = [];
+  const component = WorkspaceTabs({
+    activeView: 'source',
+    onChange: (view) => selections.push(view),
+  });
+  const html = renderToStaticMarkup(
+    React.createElement(WorkspaceTabs, {
+      activeView: 'source',
+      onChange: () => undefined,
+    }),
+  );
+
+  assert.equal(WORKSPACE_VIEWS.length, 4);
+  assert.equal((html.match(/aria-pressed="true"/g) ?? []).length, 1);
+  assert.equal((html.match(/aria-pressed="false"/g) ?? []).length, 3);
+
+  for (const view of WORKSPACE_VIEWS) {
+    assert.match(html, new RegExp(`aria-controls="workspace-${view.id}"`));
+    assert.match(html, new RegExp(`>${view.label}</button>`));
+  }
+
+  const buttons = React.Children.toArray(component.props.children) as React.ReactElement<{
+    onClick: () => void;
+  }>[];
+  buttons[2].props.onClick();
+  assert.deepEqual(selections, ['inspector']);
+});
