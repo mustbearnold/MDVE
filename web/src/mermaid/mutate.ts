@@ -14,6 +14,7 @@ import {
   isReservedId,
   parseDiagram,
   serializeDiagram,
+  supportsStructuredEditing,
 } from './parse';
 
 function cloneLines(diagram: Diagram): Line[] {
@@ -51,10 +52,6 @@ function reindex(lines: Line[]): Line[] {
   return lines.map((line, index) => ({ ...line, index }));
 }
 
-function canInsertStructuredStatement(diagram: Diagram): boolean {
-  return !diagram.unsupported && (diagram.header === 'flowchart' || diagram.header === 'graph');
-}
-
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -73,9 +70,16 @@ export function hasOpaqueNodeReferences(source: string, id: string): boolean {
   });
 }
 
+/** Deleting links can renumber Mermaid's opaque index-based linkStyle rules. */
+export function hasOpaqueLinkIndexReferences(source: string): boolean {
+  return parseDiagram(source).lines.some(
+    (line) => line.kind === 'raw' && /^\s*linkStyle\b/i.test(line.raw),
+  );
+}
+
 export function setNodeLabel(source: string, id: string, label: string): string {
   const diagram = parseDiagram(source);
-  if (!canInsertStructuredStatement(diagram)) return source;
+  if (!supportsStructuredEditing(diagram)) return source;
   const lines = cloneLines(diagram);
   let applied = false;
 
@@ -84,6 +88,7 @@ export function setNodeLabel(source: string, id: string, label: string): string 
       if (token.kind !== 'node' || token.id !== id) continue;
       if (token.label !== undefined) {
         token.label = label;
+        line.modified = true;
         applied = true;
       }
     }
@@ -96,6 +101,7 @@ export function setNodeLabel(source: string, id: string, label: string): string 
         if (token.kind === 'node' && token.id === id) {
           token.label = label;
           token.shape = token.shape ?? 'rect';
+          line.modified = true;
           applied = true;
           break outer;
         }
@@ -108,7 +114,7 @@ export function setNodeLabel(source: string, id: string, label: string): string 
 
 export function setNodeShape(source: string, id: string, shape: ShapeName): string {
   const diagram = parseDiagram(source);
-  if (!canInsertStructuredStatement(diagram)) return source;
+  if (!supportsStructuredEditing(diagram)) return source;
   const lines = cloneLines(diagram);
   const node = diagram.nodes.find((n) => n.id === id);
   const label = node?.label ?? id;
@@ -119,6 +125,7 @@ export function setNodeShape(source: string, id: string, shape: ShapeName): stri
       if (token.kind !== 'node' || token.id !== id) continue;
       if (token.label !== undefined) {
         token.shape = shape;
+        line.modified = true;
         applied = true;
       }
     }
@@ -130,6 +137,7 @@ export function setNodeShape(source: string, id: string, shape: ShapeName): stri
         if (token.kind === 'node' && token.id === id) {
           token.label = label;
           token.shape = shape;
+          line.modified = true;
           applied = true;
           break outer;
         }
@@ -144,13 +152,16 @@ export function renameNodeId(source: string, oldId: string, newId: string): stri
   if (!/^[A-Za-z0-9_][A-Za-z0-9_.-]*$/.test(newId)) return source;
   if (isReservedId(newId)) return source;
   const diagram = parseDiagram(source);
-  if (!canInsertStructuredStatement(diagram) || hasOpaqueNodeReferences(source, oldId)) return source;
+  if (!supportsStructuredEditing(diagram) || hasOpaqueNodeReferences(source, oldId)) return source;
   if (diagram.nodes.some((n) => n.id === newId)) return source;
   const lines = cloneLines(diagram);
 
   for (const line of statements(lines)) {
     for (const token of line.tokens) {
-      if (token.kind === 'node' && token.id === oldId) token.id = newId;
+      if (token.kind === 'node' && token.id === oldId) {
+        token.id = newId;
+        line.modified = true;
+      }
     }
   }
   return serializeDiagram(lines);
@@ -161,7 +172,7 @@ export function addNode(
   opts: { id?: string; label?: string; shape?: ShapeName } = {},
 ): { source: string; id: string } {
   const diagram = parseDiagram(source);
-  if (!canInsertStructuredStatement(diagram)) return { source, id: opts.id ?? '' };
+  if (!supportsStructuredEditing(diagram)) return { source, id: opts.id ?? '' };
   const existing = new Set(diagram.nodes.map((n) => n.id));
   let id = opts.id;
   if (!id || existing.has(id) || isReservedId(id)) {
@@ -198,7 +209,7 @@ export function addEdge(
   opts: { arrow?: string; label?: string } = {},
 ): string {
   const diagram = parseDiagram(source);
-  if (!canInsertStructuredStatement(diagram)) return source;
+  if (!supportsStructuredEditing(diagram)) return source;
   const lines = cloneLines(diagram);
   const at = insertionIndex(lines);
   lines.splice(at, 0, {
@@ -218,7 +229,7 @@ export function addEdge(
 
 export function setEdgeLabel(source: string, key: string, label: string): string {
   const diagram = parseDiagram(source);
-  if (!canInsertStructuredStatement(diagram)) return source;
+  if (!supportsStructuredEditing(diagram)) return source;
   const lines = cloneLines(diagram);
   const [lineIndex, tokenIndex] = key.split(':').map(Number);
   const line = lines[lineIndex];
@@ -227,12 +238,13 @@ export function setEdgeLabel(source: string, key: string, label: string): string
   if (!token || token.kind !== 'link') return source;
   token.label = label || undefined;
   token.labelStyle = 'pipe';
+  line.modified = true;
   return serializeDiagram(lines);
 }
 
 export function setEdgeArrow(source: string, key: string, arrow: string): string {
   const diagram = parseDiagram(source);
-  if (!canInsertStructuredStatement(diagram)) return source;
+  if (!supportsStructuredEditing(diagram)) return source;
   const lines = cloneLines(diagram);
   const [lineIndex, tokenIndex] = key.split(':').map(Number);
   const line = lines[lineIndex];
@@ -240,6 +252,7 @@ export function setEdgeArrow(source: string, key: string, arrow: string): string
   const token = line.tokens[tokenIndex];
   if (!token || token.kind !== 'link') return source;
   token.arrow = arrow;
+  line.modified = true;
   return serializeDiagram(lines);
 }
 
@@ -249,7 +262,7 @@ export function setEdgeArrow(source: string, key: string, arrow: string): string
  */
 export function deleteEdge(source: string, key: string): string {
   const diagram = parseDiagram(source);
-  if (!canInsertStructuredStatement(diagram)) return source;
+  if (!supportsStructuredEditing(diagram) || hasOpaqueLinkIndexReferences(source)) return source;
   const lines = cloneLines(diagram);
   const [lineIndex, tokenIndex] = key.split(':').map(Number);
   const line = lines[lineIndex];
@@ -280,7 +293,14 @@ export function deleteEdge(source: string, key: string): string {
 /** Deletes a node and every link that touches it. */
 export function deleteNode(source: string, id: string): string {
   const diagram = parseDiagram(source);
-  if (!canInsertStructuredStatement(diagram) || hasOpaqueNodeReferences(source, id)) return source;
+  const deletesLinks = diagram.edges.some((edge) => edge.from === id || edge.to === id);
+  if (
+    !supportsStructuredEditing(diagram) ||
+    hasOpaqueNodeReferences(source, id) ||
+    (deletesLinks && hasOpaqueLinkIndexReferences(source))
+  ) {
+    return source;
+  }
   const lines = cloneLines(diagram);
   const out: Line[] = [];
 
@@ -335,7 +355,7 @@ export function deleteNode(source: string, id: string): string {
 
 export function setDirection(source: string, direction: string): string {
   const diagram = parseDiagram(source);
-  if (diagram.headerLine === -1 || diagram.unsupported) return source;
+  if (!supportsStructuredEditing(diagram)) return source;
   const lines = cloneLines(diagram);
   const header = lines[diagram.headerLine];
   const kind = diagram.header ?? 'flowchart';

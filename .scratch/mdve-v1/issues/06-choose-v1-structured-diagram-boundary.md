@@ -15,13 +15,6 @@ Should trustworthy structured visual editing remain flowchart-only for v1, or sh
 - Mermaid itself supports many diagram grammars whose editing semantics are materially different.
 - Every additional structured grammar expands parser fidelity, mutation safety, accessibility, recovery, and browser test requirements.
 
-## Comments
-
-- 2026-07-28: repaired an immediate boundary violation before closing the
-  decision. Unsupported and headerless Mermaid sources now reject structured
-  insertion, new flowchart statements stay outside the final subgraph, and
-  identity edits refuse opaque node references. Eight deterministic tests pass.
-
 ## Answer
 
 ### Decision
@@ -112,3 +105,12 @@ Confidence: **very high (0.97)**. Product fit, current architecture, and direct
 failure evidence all point to the same boundary. A future grammar should be
 adopted only through a separate decision backed by its own parser/mutator,
 accessibility model, preservation corpus, and release gates.
+
+## Comments
+
+- 2026-07-28: repaired an immediate boundary violation before closing the
+  decision. Unsupported and headerless Mermaid sources now reject structured
+  mutation, new flowchart statements stay outside the final subgraph, identity
+  edits refuse opaque node references, link deletion protects opaque index-based
+  styles, and unrelated statements remain byte-identical. Eight focused
+  structured-edit tests pass.

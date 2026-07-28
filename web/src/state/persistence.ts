@@ -38,7 +38,7 @@ export function createDiagramPersistence(
     options.onStatus?.(sessionId, status);
   };
 
-  const arm = (sessionId: string, slot: SessionSlot) => {
+  const scheduleDrain = (sessionId: string, slot: SessionSlot) => {
     if (slot.timer) clearTimeout(slot.timer);
     slot.timer = setTimeout(() => {
       slot.timer = undefined;
@@ -89,7 +89,7 @@ export function createDiagramPersistence(
       // Retry that new version after the normal debounce, but do not loop on
       // the same failed payload until the user explicitly retries.
       if (slot.dirty && failedVersion !== undefined && slot.version > failedVersion) {
-        arm(sessionId, slot);
+        scheduleDrain(sessionId, slot);
       }
     }
   };
@@ -101,7 +101,7 @@ export function createDiagramPersistence(
       slot.version += 1;
       slot.dirty = true;
       setStatus(sessionId, slot, { state: 'saving' });
-      if (!slot.inFlight) arm(sessionId, slot);
+      if (!slot.inFlight) scheduleDrain(sessionId, slot);
     },
 
     flush(sessionId: string): Promise<void> {

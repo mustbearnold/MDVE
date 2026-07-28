@@ -14,8 +14,6 @@ Should v1 ship as an installable Linux desktop application, a polished local web
 - Local filesystem access and subscription-authenticated Codex are core product advantages.
 - Packaging affects onboarding, updates, diagnostics, permissions, and the durability contract.
 
-## Comments
-
 ## Answer
 
 ### Decision
@@ -100,3 +98,5 @@ Confidence: **high (0.93)**. The current architecture, target user, and
 durability contract all favor the local-web form. The remaining uncertainty is
 how to package and distribute the launcher, now isolated in **Choose the v1
 installation, update, and adoption path**.
+
+## Comments

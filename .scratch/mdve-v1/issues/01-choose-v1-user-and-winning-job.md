@@ -14,8 +14,6 @@ Which developer segment should MDVE serve first, and which repeated diagramming 
 - The current product is strongest for technical flowcharts and architecture/process diagrams, not free-form drawing.
 - A narrow winning job should determine onboarding, templates, editor depth, packaging, and success metrics.
 
-## Comments
-
 ## Answer
 
 ### Decision
@@ -57,3 +55,5 @@ MDVE's current implementation uniquely concentrates its value in the remaining s
 This deliberately chooses a smaller initial market. It depends on Linux and a working Codex CLI, and it will not win users whose primary need is presentation design or synchronous collaboration. In return, it gives MDVE a coherent reason to exist beside mature Mermaid editors: one local workspace owns the agent conversation, diagram source, rendered structure, and recovery history.
 
 Confidence: **high (0.86)**. The choice follows directly from current product capability and official competitor coverage. The largest remaining uncertainty is whether structured v1 editing should stay flowchart-only or include one adjacent graph syntax; that is now a separate frontier decision.
+
+## Comments

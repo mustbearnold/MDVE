@@ -15,10 +15,6 @@ What explicit save, recovery, history, and agent-change guarantees must MDVE mak
 - The immediate save-loss blocker is now repaired with per-session serialized scheduling, visible save state, retry, and atomic file replacement.
 - The remaining contract must settle close-tab flushing, user-visible history and restore, retention, and recovery from interrupted agent turns.
 
-## Comments
-
-- 2026-07-28: shipped the immediate quality floor without closing this decision; `npm test` locks down independent-session saves, latest-write ordering, and retry after failure.
-
 ## Answer
 
 ### Decision
@@ -165,3 +161,7 @@ Confidence: **high (0.91)**. The contract follows the chosen local-first product
 direction and closes every currently observed silent-loss path. The main
 remaining uncertainty is the exact session/history presentation, which is
 already isolated in **Choose the session and conversation continuity model**.
+
+## Comments
+
+- 2026-07-28: shipped the immediate quality floor without closing this decision; `npm test` locks down independent-Diagram saves, latest-write ordering, retry after failure, and flush-before-switch behavior.

@@ -66,6 +66,15 @@ interface Store {
 const HISTORY_LIMIT = 200;
 let diagramPersistence: ReturnType<typeof createDiagramPersistence>;
 
+async function flushDiagramBeforeNavigation(diagram: SessionMeta | null): Promise<void> {
+  if (!diagram) return;
+  await diagramPersistence.flush(diagram.id);
+  const saveStatus = diagramPersistence.status(diagram.id);
+  if (saveStatus.state === 'error') {
+    throw new Error(`Could not save ${diagram.title}: ${saveStatus.message}`);
+  }
+}
+
 export const useStore = create<Store>((set, get) => ({
   session: null,
   sessions: [],
@@ -135,6 +144,8 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   loadSession: async (id) => {
+    await flushDiagramBeforeNavigation(get().session);
+
     let targetId = id;
     if (!targetId) {
       const { sessions } = await api.listSessions();
@@ -162,6 +173,7 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   newSession: async () => {
+    await flushDiagramBeforeNavigation(get().session);
     const { session } = await api.createSession();
     await get().loadSession(session.id);
   },

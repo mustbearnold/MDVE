@@ -15,8 +15,6 @@ How should users organize diagrams, understand their saved state and history, an
 - The current selector accumulates similarly named diagrams and has no archive, delete, search, or recent-work model.
 - Development startup can create duplicate initial sessions under React Strict Mode, reinforcing the need for an explicit idempotent session lifecycle.
 
-## Comments
-
 ## Answer
 
 ### Decision
@@ -161,3 +159,5 @@ Confidence: **high (0.95)**. The live behavior reproduces both observed failure
 modes, and the selected boundaries align with the file-backed durability
 contract. The remaining provider-specific question is now isolated in **Choose
 the v1 agent-provider boundary**.
+
+## Comments

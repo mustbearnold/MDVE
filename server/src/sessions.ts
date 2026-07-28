@@ -8,9 +8,9 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, open, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 export const ROOT = process.env.MDVE_HOME ?? join(homedir(), '.mdve');
 export const SESSIONS_DIR = join(ROOT, 'sessions');
@@ -84,8 +84,22 @@ async function writeMeta(meta: SessionMeta): Promise<void> {
 async function writeAtomic(path: string, content: string): Promise<void> {
   const temporaryPath = `${path}.${randomUUID()}.tmp`;
   try {
-    await writeFile(temporaryPath, content, 'utf8');
+    const temporaryFile = await open(temporaryPath, 'wx');
+    try {
+      await temporaryFile.writeFile(content, 'utf8');
+      await temporaryFile.sync();
+    } finally {
+      await temporaryFile.close();
+    }
+
     await rename(temporaryPath, path);
+
+    const parentDirectory = await open(dirname(path), 'r');
+    try {
+      await parentDirectory.sync();
+    } finally {
+      await parentDirectory.close();
+    }
   } catch (error) {
     await unlink(temporaryPath).catch(() => undefined);
     throw error;
