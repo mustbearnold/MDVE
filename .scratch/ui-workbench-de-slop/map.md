@@ -15,10 +15,15 @@
   and Agent views below 1120 pixels.
 - Use system fonts and inline SVG icons to preserve local-first behavior and
   avoid decorative UI dependencies.
+- Ticket 01 resolved: the React workbench now has responsive one-view narrow
+  composition, preserved three-pane desktop composition, explicit semantic
+  controls, keyboard-selectable diagram elements, reduced motion, and measured
+  target/overflow/contrast evidence.
 
 ## Fog
 
-- None. Ticket 01 is the only ticket in this Wayfinder session.
+- None. Ticket 01 is resolved and remains the only ticket in this Wayfinder
+  session.
 
 ## Tickets
 
