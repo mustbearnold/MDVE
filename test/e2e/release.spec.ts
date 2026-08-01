@@ -220,6 +220,11 @@ test('a same-revision recovery draft is restored into the editor after reload', 
 });
 
 test('browser-process restart preserves a recovery draft', async ({ page }, testInfo) => {
+  // This test starts two real persistent browser processes. Under the full
+  // Chromium + Firefox stability sequence, Firefox startup can exceed the
+  // ordinary 30-second single-page test budget without the journey itself
+  // being stuck.
+  testInfo.setTimeout(90_000);
   const sessionId = await page.evaluate(() => localStorage.getItem('mdve.session'));
   expect(sessionId).toBeTruthy();
   const browser = page.context().browser();
