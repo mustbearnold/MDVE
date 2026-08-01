@@ -82,6 +82,11 @@ async function measureEditToPreview(page) {
 }
 
 async function readVitals(page) {
+  await page.waitForFunction(() => {
+    const entry = performance.getEntriesByType('largest-contentful-paint').at(-1);
+    if (entry) window.__mdvePerformance.lcp = entry.startTime;
+    return Number.isFinite(window.__mdvePerformance?.lcp);
+  }, { timeout: 5_000 });
   return page.evaluate(() => {
     const lcp = performance.getEntriesByType('largest-contentful-paint').at(-1);
     if (lcp) window.__mdvePerformance.lcp = lcp.startTime;
