@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { mkdirSync, mkdtempSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -14,10 +15,6 @@ const prefix = join(tempRoot, 'prefix');
 const dataRoot = join(tempRoot, 'data');
 const outputPath = resolve(process.env.MDVE_PERFORMANCE_OUTPUT ?? join(root, 'test-results', 'performance.json'));
 mkdirSync(join(outputPath, '..'), { recursive: true });
-
-function shellQuote(value) {
-  return `'${String(value).replaceAll("'", "'\\''")}'`;
-}
 
 function run(command, args, options = {}) {
   return execFileSync(command, args, { cwd: root, stdio: 'inherit', ...options });
@@ -40,20 +37,32 @@ const installedRoot = join(prefix, 'node_modules', packageJson.name);
 const server = join(installedRoot, 'dist', 'server', 'index.js');
 const webDist = join(installedRoot, 'dist', 'web');
 const port = 4191;
-const serverCommand = [
-  `MDVE_HOME=${shellQuote(dataRoot)}`,
-  'MDVE_HOST=127.0.0.1',
-  `MDVE_PORT=${port}`,
-  'MDVE_AUTH_REQUIRED=0',
-  `MDVE_VERSION=${shellQuote(packageJson.version)}`,
-  `MDVE_WEB_DIST=${shellQuote(webDist)}`,
-  `${shellQuote(process.execPath)} ${shellQuote(server)}`,
-].join(' ');
-
-const child = spawn('sh', ['-c', serverCommand], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
+const child = spawn(process.execPath, [server], {
+  cwd: root,
+  env: {
+    ...process.env,
+    MDVE_HOME: dataRoot,
+    MDVE_HOST: '127.0.0.1',
+    MDVE_PORT: String(port),
+    MDVE_AUTH_REQUIRED: '0',
+    MDVE_VERSION: packageJson.version,
+    MDVE_WEB_DIST: webDist,
+  },
+  stdio: ['ignore', 'pipe', 'pipe'],
+});
 let serverOutput = '';
 child.stdout.on('data', (chunk) => { serverOutput += chunk.toString(); });
 child.stderr.on('data', (chunk) => { serverOutput += chunk.toString(); });
+
+async function stopServer() {
+  if (child.exitCode !== null) return;
+  child.kill('SIGTERM');
+  await Promise.race([
+    once(child, 'exit'),
+    new Promise((resolveWait) => setTimeout(resolveWait, 2_000)),
+  ]);
+  if (child.exitCode === null) child.kill('SIGKILL');
+}
 
 async function waitForServer() {
   const deadline = Date.now() + 15_000;
@@ -134,7 +143,7 @@ try {
   }
 } finally {
   await browser.close();
-  child.kill('SIGTERM');
+  await stopServer();
 }
 
 const usable = samples.map((sample) => sample.usableMs);
