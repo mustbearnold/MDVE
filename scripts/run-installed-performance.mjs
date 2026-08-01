@@ -61,6 +61,26 @@ function vitalsInitScript() {
   };
 }
 
+async function measureEditToPreview(page) {
+  await page.evaluate(() => {
+    const measure = { start: performance.now(), end: null };
+    window.__mdveEditPreview = measure;
+    const observer = new MutationObserver(() => {
+      const node = document.querySelector('g.node[aria-label="Node: Node 1"]');
+      if (!node) return;
+      const bounds = node.getBoundingClientRect();
+      if (bounds.width > 0 && bounds.height > 0) {
+        measure.end = performance.now();
+        observer.disconnect();
+      }
+    });
+    observer.observe(document.body, { attributes: true, childList: true, subtree: true });
+  });
+  await page.getByRole('button', { name: 'Preview' }).click();
+  await page.waitForFunction(() => Number.isFinite(window.__mdveEditPreview?.end));
+  return page.evaluate(() => window.__mdveEditPreview.end - window.__mdveEditPreview.start);
+}
+
 function flowchartFixture(index) {
   // This is the representative editing fixture: 100 nodes with a small
   // connected spine. Dense 200-node/300-edge opening remains a separate gate.
@@ -263,11 +283,10 @@ try {
     await page.getByRole('button', { name: 'Source' }).click();
     await page.getByRole('textbox', { name: 'Mermaid source' }).fill(flowchartFixture(index));
     // The release budget starts at the completed final editor input event,
-    // rather than charging the user for switching into the Source tab.
+    // rather than charging the user for switching into the Source tab or for
+    // Playwright's cross-process measurement round trips.
     const editStarted = performance.now();
-    await page.getByRole('button', { name: 'Preview' }).click();
-    await page.getByRole('button', { name: 'Node: Node 1', exact: true }).waitFor();
-    const editToPreviewMs = performance.now() - editStarted;
+    const editToPreviewMs = await measureEditToPreview(page);
     await page.getByText('Saved · revision 2').waitFor();
     const editToSavedMs = performance.now() - editStarted;
 
