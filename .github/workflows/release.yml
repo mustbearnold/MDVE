@@ -41,6 +41,7 @@ jobs:
       - name: Run release gates available in CI
         run: |
           npm test
+          node --test scripts/check-release-owner-evidence.test.mjs
           npm run typecheck
           npm run build
           npm audit --omit=dev --audit-level=high
@@ -64,6 +65,17 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           npm run verify:artifact -- "release/mdve-${VERSION}.tgz"
 
+      - name: Verify release-owner evidence before publication
+        env:
+          MDVE_RELEASE_OWNER_EVIDENCE: ${{ secrets.MDVE_RELEASE_OWNER_EVIDENCE }}
+        run: |
+          if [[ -z "$MDVE_RELEASE_OWNER_EVIDENCE" ]]; then
+            echo '::error::The npm-release environment must provide MDVE_RELEASE_OWNER_EVIDENCE before publication.'
+            exit 1
+          fi
+          printf '%s' "$MDVE_RELEASE_OWNER_EVIDENCE" > "$RUNNER_TEMP/mdve-release-owner-evidence.json"
+          node scripts/check-release-owner-evidence.mjs "$RUNNER_TEMP/mdve-release-owner-evidence.json"
+
       - name: Run packaged process-crash recovery matrix
         run: |
           VERSION=$(node -p "require('./package.json').version")
@@ -86,6 +98,8 @@ jobs:
           MDVE_E2E_ARCHIVE="release/mdve-${VERSION}.tgz" MDVE_LIFECYCLE_OUTPUT="release/lifecycle.json" npm run test:install:lifecycle
 
       - name: Write release evidence manifest
+        env:
+          MDVE_RELEASE_OWNER_EVIDENCE_PATH: ${{ runner.temp }}/mdve-release-owner-evidence.json
         run: |
           VERSION=$(node -p "require('./package.json').version")
           MDVE_PERFORMANCE_OUTPUT="release/performance.json" MDVE_STABILITY_SUMMARY="release/stability/summary.json" MDVE_LIFECYCLE_OUTPUT="release/lifecycle.json" MDVE_PROCESS_CRASH_OUTPUT="release/process-crash.json" MDVE_CODEX_SCHEMA_OUTPUT="test-results/codex-schema.json" MDVE_CODEX_BIN="$RUNNER_TEMP/codex/node_modules/.bin/codex" node scripts/write-release-evidence.mjs "release/mdve-${VERSION}.tgz" release/evidence.json
@@ -103,6 +117,7 @@ jobs:
       - name: Refresh release evidence after registry verification
         env:
           MDVE_TRUSTED_PUBLISHER: npm trusted publishing via GitHub Actions OIDC; registry integrity and signatures verified
+          MDVE_RELEASE_OWNER_EVIDENCE_PATH: ${{ runner.temp }}/mdve-release-owner-evidence.json
         run: |
           VERSION=$(node -p "require('./package.json').version")
           MDVE_PERFORMANCE_OUTPUT="release/performance.json" MDVE_STABILITY_SUMMARY="release/stability/summary.json" MDVE_LIFECYCLE_OUTPUT="release/lifecycle.json" MDVE_PROCESS_CRASH_OUTPUT="release/process-crash.json" MDVE_CODEX_SCHEMA_OUTPUT="test-results/codex-schema.json" MDVE_CODEX_BIN="$RUNNER_TEMP/codex/node_modules/.bin/codex" MDVE_REGISTRY_EVIDENCE="release/registry.json" node scripts/write-release-evidence.mjs "release/mdve-${VERSION}.tgz" release/evidence.json

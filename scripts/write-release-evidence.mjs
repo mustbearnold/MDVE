@@ -35,11 +35,16 @@ const lifecyclePath = process.env.MDVE_LIFECYCLE_OUTPUT ?? 'release/lifecycle.js
 const processCrashPath = process.env.MDVE_PROCESS_CRASH_OUTPUT ?? 'test-results/process-crash.json';
 const codexSchemaPath = process.env.MDVE_CODEX_SCHEMA_OUTPUT ?? 'test-results/codex-schema.json';
 const registryPath = process.env.MDVE_REGISTRY_EVIDENCE ?? 'release/registry.json';
+const releaseOwnerEvidencePath = process.env.MDVE_RELEASE_OWNER_EVIDENCE_PATH;
 const sourceVisibility = process.env.MDVE_SOURCE_VISIBILITY ?? 'public';
 const registryEvidence = await readOptional(registryPath);
 const stabilityEvidence = await readOptional(stabilityPath);
+const releaseOwnerEvidence = releaseOwnerEvidencePath ? await readOptional(releaseOwnerEvidencePath) : null;
 if (stabilityEvidence && stabilityEvidence.commit !== candidateCommit) {
   throw new Error(`stability evidence commit ${stabilityEvidence.commit ?? 'missing'} does not match candidate ${candidateCommit}`);
+}
+if (releaseOwnerEvidence && releaseOwnerEvidence.candidateCommit !== candidateCommit) {
+  throw new Error(`release-owner evidence commit ${releaseOwnerEvidence.candidateCommit ?? 'missing'} does not match candidate ${candidateCommit}`);
 }
 
 async function readOptional(path) {
@@ -48,6 +53,19 @@ async function readOptional(path) {
   } catch {
     return null;
   }
+}
+
+function summarizeReleaseOwnerGate(name, record) {
+  if (!record) return null;
+  const fields = {
+    manualAccessibility: ['status', 'artifact', 'tester', 'date'],
+    liveCodex: ['status', 'artifact', 'tester', 'runtime', 'date'],
+    legal: ['status', 'reference', 'approver', 'date'],
+    registryName: ['status', 'package', 'reference', 'checkedAt'],
+    previousStable: ['status', 'version', 'integrity', 'artifact'],
+    lifecycle: ['status', 'artifact', 'checkedAt'],
+  }[name] ?? ['status'];
+  return Object.fromEntries(fields.filter((field) => record[field] !== undefined).map((field) => [field, record[field]]));
 }
 
 const evidence = {
@@ -94,18 +112,41 @@ const evidence = {
       : null,
     registry: registryEvidence ?? 'not published by this evidence command',
     trustedPublisher: process.env.MDVE_TRUSTED_PUBLISHER ?? 'not verified by this evidence command',
+    releaseOwner: releaseOwnerEvidence
+      ? {
+        schemaVersion: releaseOwnerEvidence.schemaVersion,
+        candidateCommit: releaseOwnerEvidence.candidateCommit,
+        packageVersion: releaseOwnerEvidence.packageVersion,
+        releaseOwner: releaseOwnerEvidence.releaseOwner,
+        attestedAt: releaseOwnerEvidence.attestedAt,
+        gates: Object.fromEntries([
+          ['manualAccessibility', releaseOwnerEvidence.manualAccessibility],
+          ['liveCodex', releaseOwnerEvidence.liveCodex],
+          ['legal', releaseOwnerEvidence.legal],
+          ['registryName', releaseOwnerEvidence.registryName],
+          ['previousStable', releaseOwnerEvidence.previousStable],
+          ['lifecycle', releaseOwnerEvidence.lifecycle],
+        ].map(([name, record]) => [name, summarizeReleaseOwnerGate(name, record)])),
+      }
+      : 'not supplied by this evidence command',
     sourceVisibility,
     publicSourceProvenance: sourceVisibility === 'private'
       ? 'unavailable for a package built from private GitHub source'
       : 'not verified by this evidence command; verify the npm attestation after trusted publication',
   },
   limitations: [
-    'Manual WCAG 2.2 AA keyboard, zoom, forced-colors, and Orca results require a release-owner record.',
-    'Live authenticated Codex compatibility and qualified legal approval are external release gates.',
+    ...(releaseOwnerEvidence?.manualAccessibility?.status === 'passed'
+      ? []
+      : ['Manual WCAG 2.2 AA keyboard, zoom, forced-colors, and Orca results require a release-owner record.']),
+    ...(releaseOwnerEvidence?.liveCodex?.status === 'passed' && releaseOwnerEvidence?.legal?.status === 'approved'
+      ? []
+      : ['Live authenticated Codex compatibility and qualified legal approval are external release gates.']),
     sourceVisibility === 'private'
       ? 'Private GitHub source cannot produce a public npm provenance claim.'
       : 'Public-source npm provenance remains unverified until the trusted-publishing workflow publishes and the registry attestation is checked.',
-    'The lifecycle rollback fixture rewrites package metadata from this candidate; it is not evidence against a separately built previous stable or incompatible data schema.',
+    ...(releaseOwnerEvidence?.previousStable?.status === 'verified'
+      ? []
+      : ['The lifecycle rollback fixture rewrites package metadata from this candidate; it is not evidence against a separately built previous stable or incompatible data schema.']),
   ],
 };
 
