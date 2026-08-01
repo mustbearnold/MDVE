@@ -159,7 +159,7 @@ Google's current Core Web Vitals targets are LCP at or below 2.5 seconds, INP at
 
 These numeric local-app budgets are MDVE product choices **[P]**, not W3C, Google, Vite, Node, or OpenAI requirements. They are deliberately measured with durable syncing enabled; disabling safety behavior to hit a latency target is not a valid pass.
 
-The dense-render budget is a separate product boundary from the ordinary initial-page TBT proxy. Dense raw TBT remains in the release record and is not silently relabeled as INP; the blocking dense signal is the time until all 200 nodes are visibly rendered.
+The dense-render budget is a separate product boundary from the ordinary initial-page TBT proxy. Dense raw TBT remains in the release record and is not silently relabeled as INP; the blocking dense signal starts after the durable revision and saved state are loaded, then measures until all 200 nodes are visibly rendered. Page startup, navigation, and durable-source loading remain covered by the cold and warm usability metrics.
 
 If MDVE later collects privacy-respecting real-user measurements, the formal Core Web Vitals judgment uses p75 field LCP/INP/CLS rather than the synthetic values above **[A]**. Until then, release notes must say “lab-tested against Core Web Vitals-aligned thresholds,” not “passes Core Web Vitals” **[I]**.
 

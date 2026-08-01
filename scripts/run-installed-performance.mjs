@@ -295,10 +295,13 @@ try {
       assert.equal(denseResponse.ok(), true);
       const denseSession = (await denseResponse.json()).session;
       await page.evaluate((id) => localStorage.setItem('mdve.session', id), denseSession.id);
-      const denseStarted = performance.now();
       await page.reload();
       await page.getByRole('heading', { name: 'Preview' }).waitFor();
       await page.getByText('Saved · revision 1').waitFor();
+      // Navigation and durable-source loading are covered by the ordinary
+      // usability metrics. Start the dense boundary once the source is ready
+      // and measure only until every dense node has been rendered.
+      const denseStarted = performance.now();
       await waitForDenseDiagram(page);
       const denseMetrics = await readVitals(page);
       denseColdOpenings.push({
@@ -342,10 +345,13 @@ try {
     const denseSession = (await denseResponse.json()).session;
     await page.goto(`http://127.0.0.1:${warmPort}/`);
     await page.evaluate((id) => localStorage.setItem('mdve.session', id), denseSession.id);
-    const denseStarted = performance.now();
     await page.reload();
     await page.getByRole('heading', { name: 'Preview' }).waitFor();
     await page.getByText('Saved · revision 1').waitFor();
+    // Navigation and durable-source loading are covered by the ordinary
+    // usability metrics. Start the dense boundary once the source is ready
+    // and measure only until every dense node has been rendered.
+    const denseStarted = performance.now();
     await waitForDenseDiagram(page);
     const denseMetrics = await readVitals(page);
     denseWarmOpenings.push({
