@@ -18,7 +18,7 @@ Call a build **MDVE v1** only when one immutable release candidate passes all ei
 
 ### Status update — 2026-08-01
 
-The repository is public and the exact `master` candidate in the latest verified cycle has completed GitHub-hosted CI and CodeQL successfully. The candidate now includes the Codex app-server integration, Node 22/24 runtime gates, packaged browser/accessibility checks, artifact checks, lifecycle checks, reliability soak, and release-stability harness. That is technical candidate evidence, not a stable-publication decision: the manual WCAG/Orca record, registry install/signature and trusted-publishing evidence, qualified legal approval, a separately built previous-release rollback, and the remaining crash/Fedora/fully authenticated Codex release-owner evidence are still release gates.
+The repository is public and the exact `master` candidate in the latest verified cycle has completed GitHub-hosted CI and CodeQL successfully. The candidate now includes the Codex app-server integration, Node 22/24 runtime gates, packaged browser/accessibility checks, artifact checks, lifecycle checks, reliability soak, and release-stability harness. That is technical candidate evidence, not a stable-publication decision: the manual WCAG/Orca record, registry install/signature and trusted-publishing evidence, qualified legal approval, a separately built previous-release rollback, and the remaining process-crash and fully authenticated Codex release-owner evidence are still release gates.
 
 | Blocking gate | Required release evidence |
 | --- | --- |
