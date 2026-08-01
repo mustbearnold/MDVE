@@ -20,6 +20,7 @@ const commandVersion = (command, args) => {
 };
 const npmVersion = execFileSync('npm', ['--version'], { encoding: 'utf8' }).trim();
 const nodeVersion = process.versions.node;
+const candidateCommit = git(['rev-parse', 'HEAD']);
 const lockfileSha256 = createHash('sha256').update(lockfile).digest('hex');
 const tarballSha256 = createHash('sha256').update(tarball).digest('hex');
 const tarballSha512 = createHash('sha512').update(tarball).digest('base64');
@@ -36,6 +37,10 @@ const codexSchemaPath = process.env.MDVE_CODEX_SCHEMA_OUTPUT ?? 'test-results/co
 const registryPath = process.env.MDVE_REGISTRY_EVIDENCE ?? 'release/registry.json';
 const sourceVisibility = process.env.MDVE_SOURCE_VISIBILITY ?? 'public';
 const registryEvidence = await readOptional(registryPath);
+const stabilityEvidence = await readOptional(stabilityPath);
+if (stabilityEvidence && stabilityEvidence.commit !== candidateCommit) {
+  throw new Error(`stability evidence commit ${stabilityEvidence.commit ?? 'missing'} does not match candidate ${candidateCommit}`);
+}
 
 async function readOptional(path) {
   try {
@@ -49,7 +54,7 @@ const evidence = {
   schemaVersion: 1,
   generatedAt: new Date().toISOString(),
   candidate: {
-    commit: git(['rev-parse', 'HEAD']),
+    commit: candidateCommit,
     branch: git(['branch', '--show-current']),
     tag: commandVersion('git', ['describe', '--exact-match', '--tags', 'HEAD']),
     cleanTree: status.length === 0,
@@ -78,7 +83,7 @@ const evidence = {
   },
   automatedEvidence: {
     performance: await readOptional(performancePath),
-    stability: await readOptional(stabilityPath),
+    stability: stabilityEvidence,
     lifecycle: await readOptional(lifecyclePath),
     processCrash: await readOptional(processCrashPath),
     codexSchema: await readOptional(codexSchemaPath),

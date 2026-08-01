@@ -1,9 +1,10 @@
 import { mkdir, writeFile } from 'node:fs/promises';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 
 const root = process.cwd();
 const runs = Number(process.env.MDVE_STABILITY_RUNS ?? 10);
+const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
 // Playwright owns and cleans `test-results` at the start of a browser run.
 // Keep the stability ledger in the release evidence tree so the runner cannot
 // delete its own directory between suites.
@@ -61,6 +62,7 @@ for (let run = 1; run <= runs; run += 1) {
 
 const summary = {
   schemaVersion: 1,
+  commit,
   startedAt,
   completedAt: new Date().toISOString(),
   requestedRuns: runs,
