@@ -28,7 +28,7 @@ let pendingSlowTurn = false;
 lines.on('line', (line) => {
   const message = JSON.parse(line);
   if (message.method === 'initialize') {
-    send({ id: message.id, result: { serverInfo: { name: 'fixture', version: '0.146.0' } } });
+    send({ id: message.id, result: { serverInfo: { name: 'fixture', version: process.env.FAKE_CODEX_SERVER_VERSION ?? '0.146.0' } } });
   } else if (message.method === 'account/read') {
     if (process.env.FAKE_CODEX_AUTH === '0') send({ id: message.id, result: { account: null } });
     else send({ id: message.id, result: { account: { type: 'chatgpt', email: 'fixture@example.test' } } });
@@ -62,6 +62,7 @@ lines.on('line', (line) => {
   const previousBin = process.env.MDVE_CODEX_BIN;
   const previousAuth = process.env.FAKE_CODEX_AUTH;
   const previousVersion = process.env.FAKE_CODEX_VERSION;
+  const previousServerVersion = process.env.FAKE_CODEX_SERVER_VERSION;
   process.env.MDVE_CODEX_BIN = fakeCodex;
   delete process.env.FAKE_CODEX_AUTH;
   delete process.env.FAKE_CODEX_VERSION;
@@ -121,6 +122,11 @@ lines.on('line', (line) => {
     process.env.FAKE_CODEX_AUTH = '0';
     assert.equal((await provider.status()).ok, false);
     assert.match((await provider.status()).detail, /not logged in/);
+    delete process.env.FAKE_CODEX_AUTH;
+    process.env.FAKE_CODEX_SERVER_VERSION = '0.145.0';
+    assert.equal((await provider.status()).ok, false);
+    assert.match((await provider.status()).detail, /app-server .*outside MDVE's tested range/);
+    delete process.env.FAKE_CODEX_SERVER_VERSION;
     process.env.FAKE_CODEX_VERSION = 'codex-cli 0.147.0';
     assert.equal((await provider.status()).ok, false);
     assert.match((await provider.status()).detail, /outside MDVE's tested range/);
@@ -131,6 +137,8 @@ lines.on('line', (line) => {
     else process.env.FAKE_CODEX_AUTH = previousAuth;
     if (previousVersion === undefined) delete process.env.FAKE_CODEX_VERSION;
     else process.env.FAKE_CODEX_VERSION = previousVersion;
+    if (previousServerVersion === undefined) delete process.env.FAKE_CODEX_SERVER_VERSION;
+    else process.env.FAKE_CODEX_SERVER_VERSION = previousServerVersion;
     await rm(root, { recursive: true, force: true });
   }
 });

@@ -11,6 +11,7 @@ permissions:
 
 env:
   NPM_VERSION: "11.18.0"
+  MDVE_SOURCE_VISIBILITY: public
 
 jobs:
   publish:
@@ -25,9 +26,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47fe5020 # v7.0.0
         with:
-          node-version: "22.11.0"
+          node-version: "24.11.0"
           registry-url: https://registry.npmjs.org
-          cache: npm
 
       - name: Install and verify pinned npm
         run: bash .github/scripts/install-pinned-npm.sh
@@ -69,12 +69,29 @@ jobs:
       - name: Run packaged install lifecycle matrix
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          MDVE_E2E_ARCHIVE="release/mdve-${VERSION}.tgz" npm run test:install:lifecycle
+          MDVE_E2E_ARCHIVE="release/mdve-${VERSION}.tgz" MDVE_LIFECYCLE_OUTPUT="release/lifecycle.json" npm run test:install:lifecycle
 
       - name: Write release evidence manifest
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          MDVE_PERFORMANCE_OUTPUT="release/performance.json" MDVE_STABILITY_SUMMARY="test-results/release-stability/summary.json" node scripts/write-release-evidence.mjs "release/mdve-${VERSION}.tgz" release/evidence.json
+          MDVE_PERFORMANCE_OUTPUT="release/performance.json" MDVE_STABILITY_SUMMARY="test-results/release-stability/summary.json" MDVE_LIFECYCLE_OUTPUT="release/lifecycle.json" node scripts/write-release-evidence.mjs "release/mdve-${VERSION}.tgz" release/evidence.json
+
+      - name: Publish the immutable candidate under the next tag
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          npm publish "release/mdve-${VERSION}.tgz" --access public --tag next
+
+      - name: Verify the registry candidate and signatures
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          npm run verify:registry -- "release/mdve-${VERSION}.tgz" release/registry.json
+
+      - name: Refresh release evidence after registry verification
+        env:
+          MDVE_TRUSTED_PUBLISHER: npm trusted publishing via GitHub Actions OIDC; registry integrity and signatures verified
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          MDVE_PERFORMANCE_OUTPUT="release/performance.json" MDVE_STABILITY_SUMMARY="test-results/release-stability/summary.json" MDVE_LIFECYCLE_OUTPUT="release/lifecycle.json" MDVE_REGISTRY_EVIDENCE="release/registry.json" node scripts/write-release-evidence.mjs "release/mdve-${VERSION}.tgz" release/evidence.json
 
       - name: Upload release evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -85,7 +102,5 @@ jobs:
             test-results/release-stability/
           if-no-files-found: error
 
-      - name: Publish through npm trusted publishing
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          npm publish "release/mdve-${VERSION}.tgz" --access public --provenance
+      - name: Record stable-promotion boundary
+        run: echo "Candidate verified and published as next; promoting latest remains an explicit maintainer action after legal approval."

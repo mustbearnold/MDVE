@@ -152,10 +152,15 @@ class AppServerClient {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     const client = new AppServerClient(stderrTail, child);
-    await client.request('initialize', {
+    const initialized = await client.request<{ serverInfo?: { version?: string } }>('initialize', {
       clientInfo: { name: 'mdve', title: 'MDVE', version: CLIENT_VERSION },
       capabilities: { experimentalApi: false, requestAttestation: false },
     });
+    const serverVersion = initialized.serverInfo?.version ?? null;
+    if (!isSupportedVersion(serverVersion)) {
+      client.close();
+      throw new Error(`Codex app-server ${serverVersion ?? 'unknown'} is outside MDVE's tested range ${CODEX_COMPATIBILITY_RANGE}`);
+    }
     client.notify('initialized');
     return client;
   }
@@ -246,8 +251,12 @@ export class CodexProvider implements Provider {
       // Authentication state is useful to the UI, but an account identifier is
       // not. Keep provider diagnostics free of user identity and credentials.
       return { ok: true, detail: `${version} · ChatGPT account` };
-    } catch {
-      return { ok: false, detail: `Codex app-server is unavailable for ${version}` };
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : '';
+      return {
+        ok: false,
+        detail: detail.startsWith('Codex app-server') ? detail : `Codex app-server is unavailable for ${version}`,
+      };
     } finally {
       client?.close();
     }

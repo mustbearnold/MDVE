@@ -85,3 +85,28 @@ test('compact layout keeps the critical edit and recovery path operable', async 
     expect(result.violations, `${view} compact accessibility violations`).toEqual([]);
   }
 });
+
+test('keyboard-only editing, preview, and recovery remain operable', async ({ page }) => {
+  const sourceTab = page.getByRole('button', { name: 'Source', exact: true });
+  await sourceTab.focus();
+  await page.keyboard.press('Enter');
+
+  const source = page.getByRole('textbox', { name: 'Mermaid source' });
+  await source.focus();
+  await page.keyboard.press('ControlOrMeta+A');
+  await page.keyboard.type('flowchart TD\n  keyboard[Keyboard] --> done[Done]\n');
+  await waitForSaved(page, 2);
+
+  const previewTab = page.getByRole('button', { name: 'Preview', exact: true });
+  await previewTab.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('button', { name: 'Node: Keyboard' })).toBeVisible();
+
+  const historyTab = page.getByRole('button', { name: 'History', exact: true });
+  await historyTab.focus();
+  await page.keyboard.press('Enter');
+  const restoreButtons = page.getByRole('button', { name: 'Restore as new revision' });
+  await restoreButtons.nth(1).focus();
+  await page.keyboard.press('Enter');
+  await waitForSaved(page, 3);
+});

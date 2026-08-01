@@ -101,10 +101,11 @@ The development-only `PORT` and `HOST` aliases are also accepted by the server.
 ## Release status
 
 The repository contains the V1 candidate packaging, release gates, and local
-verification harness. Public publication remains gated on the documented
-GitHub-hosted CI evidence, dependency/license review, qualified legal approval,
-and the full browser/accessibility/performance matrix for one immutable
-candidate. No public registry publication is implied by this repository state.
+verification harness. Exact-head GitHub CI and CodeQL checks are part of the
+candidate record. Public publication remains gated on the documented manual
+WCAG review, registry trusted-publishing/integrity evidence, qualified legal
+approval, and any remaining release-owner evidence for one immutable candidate.
+No public registry publication is implied by this repository state.
 
 ## Scope
 

@@ -16,6 +16,10 @@ All external factual claims below link to the current official specification, do
 
 Call a build **MDVE v1** only when one immutable release candidate passes all eight blocking gates below and its evidence is attached to the release record. A local pass, an npm tarball, a successful production build, or a passing accessibility scanner is evidence for one part of the decision; none is a substitute for the complete set.
 
+### Status update — 2026-08-01
+
+The repository is public and the exact `master` candidate in the latest verified cycle has completed GitHub-hosted CI and CodeQL successfully. The candidate now includes the Codex app-server integration, Node 22/24 runtime gates, packaged browser/accessibility checks, artifact checks, lifecycle checks, reliability soak, and release-stability harness. That is technical candidate evidence, not a stable-publication decision: the manual WCAG/Orca record, registry install/signature and trusted-publishing evidence, qualified legal approval, a separately built previous-release rollback, and the remaining crash/Fedora/fully authenticated Codex release-owner evidence are still release gates.
+
 | Blocking gate | Required release evidence |
 | --- | --- |
 | 1. Product contract and regression coverage | Exact-head tests for API, parser/mutator, packaged browser workflows, responsive states, recovery, and agent state; typecheck and production build |
@@ -27,7 +31,7 @@ Call a build **MDVE v1** only when one immutable release candidate passes all ei
 | 7. Codex app-server contract | Generated-schema plus lifecycle tests for initialization, account, models, thread start/resume, streamed turns, interruption, and unavailable threads |
 | 8. Independent CI and release record | A GitHub-hosted exact-head workflow with executed steps and a complete, reviewable evidence manifest |
 
-The current repository does **not** satisfy these gates. The ticket already records open parser, API, agent-run, and browser coverage; the current package is development-only; the provider still wraps `codex exec` and reads private Codex files; `engines.node` and CI still admit or use Node 20; and GitHub issue [Restore GitHub Actions runner availability](https://github.com/mustbearnold/MDVE/issues/6) records runs that completed with zero executed steps.
+The paragraph below is the 2026-07-28 baseline that motivated the implementation work; it is retained as research history. Current candidate status is recorded in the update above. The release decision still depends on the complete gate matrix, not on the fact that several of the baseline findings are now repaired.
 
 ## 1. Product contract and regression gate
 
@@ -256,26 +260,26 @@ The current `server/src/providers/codex.ts` cannot pass this gate: it reads priv
 
 GitHub required status checks are meant to show that commits meet repository conditions, and protected branches can require them before merge **[A]** ([GitHub status checks](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-commits/about-status-checks), [protected branches](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches#require-status-checks-before-merging)). GitHub's run logs expose each job and step status **[A]** ([GitHub workflow run logs](https://docs.github.com/en/actions/how-tos/monitor-workflows/use-workflow-run-logs)). A workflow conclusion with zero executed validation steps therefore supplies no test, typecheck, build, browser, or package evidence **[I]**.
 
-### Pull-request CI
+### Exact-head GitHub CI
 
-**[P]** The exact PR head must complete on a GitHub-hosted runner with actual logs for:
+**[P]** The exact release-candidate head on `master` must complete on a GitHub-hosted runner with actual logs for:
 
 - locked install, unit/integration tests, typecheck, and production build on Node 22 and 24 LTS;
 - server fault-injection and Codex schema/contract tests;
 - packaged-production browser, accessibility, and performance jobs with their reports uploaded; and
 - tarball manifest, clean-prefix install, launch, and data-lifecycle tests.
 
-The `validate` check should be required from GitHub Actions and branch protections should require an up-to-date head. Independent standards and spec/scope/evidence reviews must resolve every release-blocking finding before the release commit is tagged **[P]**.
+The `validate` check should be required from GitHub Actions and branch protections should require an up-to-date head. Independent standards and spec/scope/evidence reviews must resolve every release-blocking finding before the release commit is tagged **[P]**. For this repository's direct-to-`master` delivery model, the exact pushed commit and its GitHub checks are the release record; a pull request is not a required delivery artifact.
 
-### Issue #6 exception boundary
+### Issue #6 historical exception boundary
 
-GitHub issue [Restore GitHub Actions runner availability](https://github.com/mustbearnold/MDVE/issues/6) records private-repository runs that executed zero steps because of an account billing/spending-limit block. GitHub documents that private-repository hosted-runner usage is quota/billing controlled **[A]** ([GitHub Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions)).
+GitHub issue [Restore GitHub Actions runner availability](https://github.com/mustbearnold/MDVE/issues/6) recorded private-repository runs that executed zero steps because of an account billing/spending-limit block. That issue is now closed, the repository is public, and exact-head GitHub-hosted runs execute the release jobs. GitHub documents that private-repository hosted-runner usage is quota/billing controlled **[A]** ([GitHub Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions)).
 
-**[P]** While that external block remains:
+**[P]** If the same external block recurs:
 
 - an individual documentation/decision PR may merge only under an explicit exception comment containing the exact head SHA, exact local commands, outputs/test counts, independent review results, zero-step run URL, GitHub annotation, and issue #6 link;
 - the record must say **“CI unavailable; zero workflow steps executed”**, never “CI passed”; and
-- **MDVE v1 stable publication remains blocked**, because neither the remote release matrix nor GitHub-hosted OIDC trusted publication can run.
+- stable publication remains blocked until the remote release matrix and GitHub-hosted OIDC trusted publication are actually observed for the candidate; the historical exception never waives those gates.
 
 Local validation is useful exact-head evidence. It cannot establish a GitHub-hosted matrix, required-check success, or trusted-publisher identity **[I]**.
 

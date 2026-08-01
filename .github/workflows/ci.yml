@@ -58,6 +58,42 @@ jobs:
       - name: Verify npm artifact allowlist and bundle budget
         run: npm run verify:artifact
 
+  fedora:
+    name: Fedora 44 runtime
+    runs-on: ubuntu-latest
+    container: fedora:44
+    timeout-minutes: 15
+    steps:
+      - name: Install Fedora build prerequisites
+        run: dnf install -y ca-certificates curl git-core gzip make tar which xz
+
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24.11.0"
+          cache: npm
+
+      - name: Install and verify pinned npm
+        run: bash .github/scripts/install-pinned-npm.sh
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Fedora unit and contract tests
+        run: npm test
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build production assets
+        run: npm run build
+
+      - name: Verify npm artifact allowlist and bundle budget
+        run: npm run verify:artifact
+
   security:
     name: Production dependency audit
     runs-on: ubuntu-latest
@@ -195,6 +231,7 @@ jobs:
       - browser
       - reliability
       - lifecycle
+      - fedora
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -206,12 +243,14 @@ jobs:
           BROWSER_RESULT: ${{ needs.browser.result }}
           RELIABILITY_RESULT: ${{ needs.reliability.result }}
           LIFECYCLE_RESULT: ${{ needs.lifecycle.result }}
+          FEDORA_RESULT: ${{ needs.fedora.result }}
         run: |
           test "${QUALITY_RESULT}" = "success"
           test "${SECURITY_RESULT}" = "success"
           test "${BROWSER_RESULT}" = "success"
           test "${RELIABILITY_RESULT}" = "success"
           test "${LIFECYCLE_RESULT}" = "success"
+          test "${FEDORA_RESULT}" = "success"
           case "${DEPENDENCY_REVIEW_RESULT}" in
             success|skipped) ;;
             *) exit 1 ;;

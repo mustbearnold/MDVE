@@ -30,6 +30,10 @@ const tarListing = execFileSync('tar', ['-tzf', archive], { encoding: 'utf8' })
   .filter(Boolean);
 const performancePath = process.env.MDVE_PERFORMANCE_OUTPUT ?? 'release/performance.json';
 const stabilityPath = process.env.MDVE_STABILITY_SUMMARY ?? 'test-results/release-stability/summary.json';
+const lifecyclePath = process.env.MDVE_LIFECYCLE_OUTPUT ?? 'release/lifecycle.json';
+const registryPath = process.env.MDVE_REGISTRY_EVIDENCE ?? 'release/registry.json';
+const sourceVisibility = process.env.MDVE_SOURCE_VISIBILITY ?? 'public';
+const registryEvidence = await readOptional(registryPath);
 
 async function readOptional(path) {
   try {
@@ -73,19 +77,26 @@ const evidence = {
   automatedEvidence: {
     performance: await readOptional(performancePath),
     stability: await readOptional(stabilityPath),
+    lifecycle: await readOptional(lifecyclePath),
   },
   releaseRecord: {
     githubRun: process.env.GITHUB_SERVER_URL && process.env.GITHUB_RUN_ID
       ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
       : null,
-    registry: 'not published by this evidence command',
-    trustedPublisher: 'not verified by this evidence command',
-    publicSourceProvenance: 'unavailable for a package built from private GitHub source',
+    registry: registryEvidence ?? 'not published by this evidence command',
+    trustedPublisher: process.env.MDVE_TRUSTED_PUBLISHER ?? 'not verified by this evidence command',
+    sourceVisibility,
+    publicSourceProvenance: sourceVisibility === 'private'
+      ? 'unavailable for a package built from private GitHub source'
+      : 'not verified by this evidence command; verify the npm attestation after trusted publication',
   },
   limitations: [
     'Manual WCAG 2.2 AA keyboard, zoom, forced-colors, and Orca results require a release-owner record.',
     'Live authenticated Codex compatibility and qualified legal approval are external release gates.',
-    'Private GitHub source cannot produce a public npm provenance claim.',
+    sourceVisibility === 'private'
+      ? 'Private GitHub source cannot produce a public npm provenance claim.'
+      : 'Public-source npm provenance remains unverified until the trusted-publishing workflow publishes and the registry attestation is checked.',
+    'The lifecycle rollback fixture rewrites package metadata from this candidate; it is not evidence against a separately built previous stable or incompatible data schema.',
   ],
 };
 
