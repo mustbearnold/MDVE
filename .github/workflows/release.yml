@@ -17,7 +17,7 @@ jobs:
     name: Verify and publish the tagged candidate
     runs-on: ubuntu-latest
     environment: npm-release
-    timeout-minutes: 20
+    timeout-minutes: 60
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -46,6 +46,7 @@ jobs:
           npm audit --omit=dev --audit-level=high
           npm run verify:licenses
           npm run test:reliability
+          npm run test:release:stability
 
       - name: Build and inspect exact npm candidate
         run: |
@@ -69,6 +70,20 @@ jobs:
         run: |
           VERSION=$(node -p "require('./package.json').version")
           MDVE_E2E_ARCHIVE="release/mdve-${VERSION}.tgz" npm run test:install:lifecycle
+
+      - name: Write release evidence manifest
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          MDVE_PERFORMANCE_OUTPUT="release/performance.json" MDVE_STABILITY_SUMMARY="test-results/release-stability/summary.json" node scripts/write-release-evidence.mjs "release/mdve-${VERSION}.tgz" release/evidence.json
+
+      - name: Upload release evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mdve-${{ github.ref_name }}-release-evidence
+          path: |
+            release/
+            test-results/release-stability/
+          if-no-files-found: error
 
       - name: Publish through npm trusted publishing
         run: |

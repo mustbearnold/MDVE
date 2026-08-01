@@ -79,8 +79,11 @@ const browser = await chromium.launch({ headless: true });
 try {
   await waitForServer();
   for (let index = 0; index < 20; index += 1) {
+    console.log(`[performance] sample ${index + 1}/20 starting`);
     const context = await browser.newContext({ viewport: { width: 800, height: 900 } });
     const page = await context.newPage();
+    page.setDefaultTimeout(15_000);
+    page.setDefaultNavigationTimeout(15_000);
     await page.addInitScript(() => {
       const state = { lcp: null, cls: 0, tbt: 0 };
       window.__mdvePerformance = state;
@@ -126,6 +129,7 @@ try {
     await page.waitForTimeout(50);
     const metrics = await page.evaluate(() => ({ ...window.__mdvePerformance }));
     samples.push({ index, usableMs, editToSavedMs, lcpMs: metrics.lcp, cls: metrics.cls, tbtMs: metrics.tbt });
+    console.log(`[performance] sample ${index + 1}/20 complete usable=${usableMs.toFixed(1)}ms saved=${editToSavedMs.toFixed(1)}ms`);
     await context.close();
   }
 } finally {

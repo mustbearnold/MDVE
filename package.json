@@ -40,6 +40,8 @@
     "test:performance:installed": "node scripts/run-installed-performance.mjs",
     "test:install:lifecycle": "node scripts/install-lifecycle.mjs",
     "test:reliability": "npm run build:server && node scripts/reliability-soak.mjs",
+    "test:release:stability": "node scripts/run-release-stability.mjs",
+    "write:release:evidence": "node scripts/write-release-evidence.mjs",
     "verify:artifact": "node scripts/check-release-artifact.mjs",
     "verify:licenses": "node scripts/check-production-licenses.mjs",
     "test": "tsx --test server/src/api.test.ts server/src/sessions.test.ts server/src/providers/codex.test.ts web/src/components/WorkbenchTabs.test.ts web/src/mermaid/mutate.test.ts web/src/mermaid/corpus.test.ts web/src/state/persistence.test.ts web/src/state/store.persistence.test.ts",

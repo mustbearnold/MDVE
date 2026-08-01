@@ -8,7 +8,9 @@ export default defineConfig({
   workers: 1,
   timeout: 30_000,
   expect: { timeout: 5_000 },
-  reporter: process.env.CI ? [['line'], ['json', { outputFile: 'test-results/e2e-results.json' }]] : 'line',
+  reporter: process.env.CI
+    ? [['line'], ['json', { outputFile: process.env.MDVE_E2E_REPORT ?? 'test-results/e2e-results.json' }]]
+    : 'line',
   use: {
     baseURL: 'http://127.0.0.1:4187',
     trace: 'retain-on-failure',
