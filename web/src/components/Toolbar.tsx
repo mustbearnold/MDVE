@@ -29,16 +29,23 @@ export function Toolbar(): JSX.Element {
   const diagram = useStore((s) => s.diagram);
   const renderError = useStore((s) => s.renderError);
   const session = useStore((s) => s.session);
+  const revision = useStore((s) => s.revision);
   const sessions = useStore((s) => s.sessions);
+  const librarySearch = useStore((s) => s.librarySearch);
+  const setLibrarySearch = useStore((s) => s.setLibrarySearch);
   const loadSession = useStore((s) => s.loadSession);
   const newSession = useStore((s) => s.newSession);
   const renameSession = useStore((s) => s.renameSession);
+  const archiveSession = useStore((s) => s.archiveSession);
+  const restoreSession = useStore((s) => s.restoreSession);
   const undo = useStore((s) => s.undo);
   const redo = useStore((s) => s.redo);
   const past = useStore((s) => s.past);
   const future = useStore((s) => s.future);
   const saveStatus = useStore((s) => s.saveStatus);
+  const draftStatus = useStore((s) => s.draftStatus);
   const retrySave = useStore((s) => s.retrySave);
+  const resolveConflict = useStore((s) => s.resolveConflict);
   const fileRef = useRef<HTMLInputElement>(null);
   const diagramMenuRef = useRef<HTMLDetailsElement>(null);
   const fileMenuRef = useRef<HTMLDetailsElement>(null);
@@ -110,10 +117,20 @@ export function Toolbar(): JSX.Element {
         >
           {sessions.map((s) => (
             <option key={s.id} value={s.id}>
-              {s.title}
+              {s.title}{s.archived ? ' (archived)' : ''}
             </option>
           ))}
         </select>
+        <label className="sr-only" htmlFor="diagram-search">
+          Search diagrams
+        </label>
+        <input
+          className="diagram-search"
+          id="diagram-search"
+          value={librarySearch}
+          placeholder="Search diagrams"
+          onChange={(event) => setLibrarySearch(event.target.value)}
+        />
         <span className={`save-status save-${saveStatus.state}`} aria-live="polite">
           {saveStatus.state === 'error' ? (
             <button className="save-retry" onClick={retrySave} title={saveStatus.message}>
@@ -121,10 +138,29 @@ export function Toolbar(): JSX.Element {
             </button>
           ) : saveStatus.state === 'saving' ? (
             <><span className="status-dot" />Saving…</>
+          ) : saveStatus.state === 'conflict' ? (
+            <>
+              <span className="status-dot status-warning" />
+              Conflict · revision {saveStatus.actualRevision}
+              <button className="save-retry" onClick={() => resolveConflict('current')} title="Replace the editor with the current durable version">
+                Use current
+              </button>
+              <button className="save-retry" onClick={() => resolveConflict('local')} title="Save this editor version on top of the current durable version">
+                Keep mine
+              </button>
+              <details className="conflict-details">
+                <summary>Inspect current</summary>
+                <pre>{saveStatus.currentSource}</pre>
+              </details>
+            </>
+          ) : saveStatus.historyAvailable === false ? (
+            <><span className="status-dot status-warning" />Saved · history unavailable</>
           ) : (
-            <><span className="status-dot" />Saved</>
+            <><span className="status-dot" />Saved · revision {revision}</>
           )}
         </span>
+        {draftStatus === 'available' && <span className="save-status save-saving">Recovery draft available</span>}
+        {draftStatus === 'degraded' && <span className="save-status save-error">Draft recovery unavailable</span>}
       </div>
 
       <div className="toolbar-group toolbar-edit" aria-label="Edit diagram">
@@ -175,6 +211,25 @@ export function Toolbar(): JSX.Element {
           >
             New diagram
           </button>
+          {session?.archived ? (
+            <button
+              onClick={() => {
+                closeMenu(diagramMenuRef);
+                void restoreSession();
+              }}
+            >
+              Restore diagram
+            </button>
+          ) : (
+            <button
+              onClick={() => {
+                closeMenu(diagramMenuRef);
+                void archiveSession();
+              }}
+            >
+              Archive diagram
+            </button>
+          )}
           <button
             onClick={() => {
               closeMenu(diagramMenuRef);

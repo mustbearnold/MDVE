@@ -3,6 +3,7 @@
  */
 
 import { existsSync } from 'node:fs';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -14,32 +15,106 @@ import { CodexProvider } from './providers/codex.js';
 import type { AgentEvent, Provider } from './providers/types.js';
 import {
   DEFAULT_DIAGRAM,
+  AgentLeaseError,
+  RevisionConflictError,
+  appendTurnTrace,
+  beginAgentTurn,
   createSession,
+  createConversation,
+  createRecoveryPoint,
+  archiveConversation,
+  restoreConversation,
   diagramPath,
   ensureAgentsFile,
   ensureRoot,
+  finishAgentTurn,
+  getDiagramState,
+  listConversations,
   listSessions,
+  readConversation,
   readDiagram,
+  readHistory,
+  readRecoveryPoint,
   readMeta,
+  restoreRecoveryPoint,
+  archiveSession,
+  restoreSession,
   sessionDir,
   sessionExists,
-  snapshotDiagram,
   updateMeta,
+  updateConversation,
   writeDiagram,
 } from './sessions.js';
 
-const PORT = Number(process.env.PORT ?? 8787);
-const HOST = process.env.HOST ?? '127.0.0.1';
+const PORT = Number(process.env.MDVE_PORT ?? process.env.PORT ?? 8787);
+const HOST = process.env.MDVE_HOST ?? process.env.HOST ?? '127.0.0.1';
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const WEB_DIST = resolve(__dirname, '../../web/dist');
+const WEB_DIST = resolve(
+  process.env.MDVE_WEB_DIST ??
+    (existsSync(resolve(__dirname, '../web')) ? resolve(__dirname, '../web') : resolve(__dirname, '../../web/dist')),
+);
+const VERSION = process.env.MDVE_VERSION ?? '0.1.0-dev';
+const AUTH_REQUIRED = process.env.MDVE_AUTH_REQUIRED === '1';
+const AUTH_HOST = `${HOST}:${PORT}`;
+let bootstrapToken = process.env.MDVE_BOOTSTRAP_TOKEN ?? null;
+const authSessions = new Set<string>();
 
 const providers = new Map<string, Provider>();
 const codex = new CodexProvider();
 providers.set(codex.id, codex);
 
 const app = express();
+app.disable('x-powered-by');
 app.use(cors({ origin: [/^http:\/\/localhost:\d+$/, /^http:\/\/127\.0\.0\.1:\d+$/] }));
 app.use(express.json({ limit: '4mb' }));
+
+function sameSecret(left: string, right: string): boolean {
+  const leftBytes = Buffer.from(left);
+  const rightBytes = Buffer.from(right);
+  return leftBytes.length === rightBytes.length && timingSafeEqual(leftBytes, rightBytes);
+}
+
+function cookieValue(header: string | undefined, name: string): string | null {
+  for (const part of (header ?? '').split(';')) {
+    const [key, ...value] = part.trim().split('=');
+    if (key === name) return value.join('=') || null;
+  }
+  return null;
+}
+
+function rejectInvalidLoopbackOrigin(req: express.Request, res: express.Response, next: express.NextFunction): void {
+  if (!AUTH_REQUIRED) return next();
+  if (req.get('host') !== AUTH_HOST) return void res.status(400).json({ error: `Invalid Host; use http://${AUTH_HOST}` });
+  const origin = req.get('origin');
+  if (origin && origin !== `http://${AUTH_HOST}`) {
+    return void res.status(403).json({ error: 'Invalid Origin' });
+  }
+  next();
+}
+
+app.use(rejectInvalidLoopbackOrigin);
+
+app.get('/_mdve/ready', (_req, res) => {
+  res.json({ ok: true, version: VERSION });
+});
+
+app.get('/_auth/bootstrap', (req, res) => {
+  if (!AUTH_REQUIRED) return res.redirect('/');
+  const supplied = typeof req.query.token === 'string' ? req.query.token : '';
+  if (!bootstrapToken || !sameSecret(supplied, bootstrapToken)) return res.status(401).send('Invalid or expired MDVE bootstrap link');
+  bootstrapToken = null;
+  const session = randomBytes(32).toString('hex');
+  authSessions.add(session);
+  res.setHeader('Set-Cookie', `mdve_session=${session}; Path=/; HttpOnly; SameSite=Strict; Max-Age=28800`);
+  res.redirect('/');
+});
+
+app.use('/api', (req, res, next) => {
+  if (!AUTH_REQUIRED) return next();
+  const session = cookieValue(req.get('cookie'), 'mdve_session');
+  if (!session || !authSessions.has(session)) return res.status(401).json({ error: 'MDVE browser session is not authenticated' });
+  next();
+});
 
 /* ------------------------------------------------------------------ *
  * Live diagram updates
@@ -110,8 +185,27 @@ app.get('/api/sessions/:id/events', async (req, res) => {
  * Sessions + diagrams
  * ------------------------------------------------------------------ */
 
-app.get('/api/sessions', async (_req, res) => {
-  res.json({ sessions: await listSessions() });
+app.get('/api/sessions', async (req, res) => {
+  const scope = req.query.scope === 'active' || req.query.scope === 'archived' ? req.query.scope : 'all';
+  const search = typeof req.query.search === 'string' ? req.query.search : '';
+  res.json({ sessions: await listSessions(scope, search) });
+});
+
+app.get('/api/startup', async (_req, res) => {
+  const sessions = await listSessions('active');
+  const session = sessions[0] ?? (await createSession());
+  res.json({ session });
+});
+
+app.get('/api/meta', async (_req, res) => {
+  const provider = providers.get('codex');
+  res.json({
+    version: VERSION,
+    serverVersion: VERSION,
+    uiVersion: VERSION,
+    node: process.versions.node,
+    provider: provider ? { id: provider.id, status: await provider.status() } : null,
+  });
 });
 
 app.post('/api/sessions', async (req, res) => {
@@ -123,12 +217,93 @@ app.post('/api/sessions', async (req, res) => {
 app.get('/api/sessions/:id', async (req, res) => {
   const meta = await readMeta(req.params.id);
   if (!meta) return res.status(404).json({ error: 'No such session' });
-  const source = (await readDiagram(req.params.id)) ?? '';
-  res.json({ session: meta, source, workspace: sessionDir(req.params.id) });
+  const state = await getDiagramState(req.params.id);
+  if (!state) return res.status(409).json({ error: 'Diagram durability state is unavailable' });
+  res.json({ session: { ...meta, revision: state.revision, checksum: state.checksum }, source: state.source, revision: state.revision, checksum: state.checksum, workspace: sessionDir(req.params.id) });
+});
+
+app.get('/api/sessions/:id/history', async (req, res) => {
+  if (!(await sessionExists(req.params.id))) return res.status(404).json({ error: 'No such session' });
+  res.json({ history: await readHistory(req.params.id) });
+});
+
+app.get('/api/sessions/:id/history/:pointId', async (req, res) => {
+  const point = await readRecoveryPoint(req.params.id, req.params.pointId);
+  if (!point) return res.status(404).json({ error: 'Recovery point is missing or damaged' });
+  res.json(point);
+});
+
+app.post('/api/sessions/:id/history/:pointId/restore', async (req, res) => {
+  try {
+    const result = await restoreRecoveryPoint(req.params.id, req.params.pointId);
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    res.status(409).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+app.get('/api/sessions/:id/conversations', async (req, res) => {
+  if (!(await sessionExists(req.params.id))) return res.status(404).json({ error: 'No such session' });
+  res.json({ conversations: await listConversations(req.params.id) });
+});
+
+app.post('/api/sessions/:id/conversations', async (req, res) => {
+  try {
+    const conversation = await createConversation(req.params.id, { title: req.body?.title, provider: req.body?.provider ?? 'codex' });
+    res.status(201).json({ conversation });
+  } catch (error) {
+    res.status(404).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+app.get('/api/sessions/:id/conversations/:conversationId', async (req, res) => {
+  const conversation = await readConversation(req.params.id, req.params.conversationId);
+  if (!conversation) return res.status(404).json({ error: 'No such conversation' });
+  res.json({ conversation });
+});
+
+app.post('/api/sessions/:id/conversations/:conversationId/archive', async (req, res) => {
+  try {
+    const conversation = await archiveConversation(req.params.id, req.params.conversationId);
+    if (!conversation) return res.status(404).json({ error: 'No such conversation' });
+    res.json({ conversation });
+  } catch (error) {
+    res.status(409).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+app.post('/api/sessions/:id/conversations/:conversationId/restore', async (req, res) => {
+  const conversation = await restoreConversation(req.params.id, req.params.conversationId);
+  if (!conversation) return res.status(404).json({ error: 'No such conversation' });
+  res.json({ conversation });
+});
+
+app.post('/api/sessions/:id/archive', async (req, res) => {
+  try {
+    const session = await archiveSession(req.params.id);
+    if (!session) return res.status(404).json({ error: 'No such session' });
+    res.json({ session });
+  } catch (error) {
+    res.status(409).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+app.post('/api/sessions/:id/restore', async (req, res) => {
+  const session = await restoreSession(req.params.id);
+  if (!session) return res.status(404).json({ error: 'No such session' });
+  res.json({ session });
 });
 
 app.patch('/api/sessions/:id', async (req, res) => {
-  const meta = await updateMeta(req.params.id, { title: req.body?.title });
+  const patch: { title?: string; selectedConversationId?: string } = {};
+  if (typeof req.body?.title === 'string') patch.title = req.body.title;
+  if (typeof req.body?.selectedConversationId === 'string') {
+    if (!(await readConversation(req.params.id, req.body.selectedConversationId))) {
+      return res.status(400).json({ error: 'No such conversation' });
+    }
+    patch.selectedConversationId = req.body.selectedConversationId;
+  }
+  const meta = await updateMeta(req.params.id, patch);
   if (!meta) return res.status(404).json({ error: 'No such session' });
   res.json({ session: meta });
 });
@@ -138,10 +313,26 @@ app.put('/api/sessions/:id/diagram', async (req, res) => {
   const source = req.body?.source;
   if (typeof source !== 'string') return res.status(400).json({ error: 'source must be a string' });
   if (!(await sessionExists(id))) return res.status(404).json({ error: 'No such session' });
-  lastWrittenBySelf.set(id, source);
-  await writeDiagram(id, source);
-  await updateMeta(id, {});
-  res.json({ ok: true });
+  try {
+    const result = await writeDiagram(id, source, {
+      expectedRevision: typeof req.body?.expectedRevision === 'number' ? req.body.expectedRevision : undefined,
+      origin: req.body?.origin === 'import' ? 'import' : 'manual',
+    });
+    lastWrittenBySelf.set(id, source);
+    let historyAvailable = true;
+    try {
+      await createRecoveryPoint(id, result.origin);
+    } catch {
+      historyAvailable = false;
+    }
+    res.json({ ok: true, ...result, historyAvailable });
+  } catch (error) {
+    if (error instanceof RevisionConflictError) {
+      return res.status(409).json({ error: error.message, expectedRevision: error.expectedRevision, revision: error.actualRevision, source: error.currentSource });
+    }
+    if (error instanceof AgentLeaseError) return res.status(423).json({ error: error.message, lease: error.lease });
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+  }
 });
 
 /* ------------------------------------------------------------------ *
@@ -161,7 +352,7 @@ const running = new Map<string, AbortController>();
 
 app.post('/api/sessions/:id/chat', async (req, res) => {
   const { id } = req.params;
-  const { prompt, providerId = 'codex', model, effort, newThread } = req.body ?? {};
+  const { prompt, providerId = 'codex', model, effort, newThread, conversationId } = req.body ?? {};
 
   if (typeof prompt !== 'string' || prompt.trim() === '') {
     return res.status(400).json({ error: 'prompt is required' });
@@ -170,6 +361,26 @@ app.post('/api/sessions/:id/chat', async (req, res) => {
   if (!meta) return res.status(404).json({ error: 'No such session' });
   const provider = providers.get(providerId);
   if (!provider) return res.status(400).json({ error: `Unknown provider: ${providerId}` });
+
+  let conversation = conversationId ? await readConversation(id, conversationId) : undefined;
+  if (conversation && conversation.provider !== providerId) {
+    return res.status(409).json({ error: 'A Conversation is permanently bound to its original Agent provider; start a new Conversation to change provider.' });
+  }
+  if (!conversation || newThread) {
+    conversation = await createConversation(id, { provider: providerId });
+  }
+  let turn;
+  try {
+    turn = await beginAgentTurn(id, conversation.id, {
+      prompt,
+      provider: providerId,
+      providerThreadId: newThread ? undefined : conversation.providerThreadId,
+      model,
+      effort,
+    });
+  } catch (error) {
+    return res.status(409).json({ error: error instanceof Error ? error.message : String(error) });
+  }
 
   running.get(id)?.abort();
   const controller = new AbortController();
@@ -182,8 +393,14 @@ app.post('/api/sessions/:id/chat', async (req, res) => {
     'X-Accel-Buffering': 'no',
   });
 
+  let finalResponse = '';
   const emit = (event: AgentEvent) => {
-    if (event.type === 'thread') void updateMeta(id, { threadId: event.threadId, provider: providerId, model });
+    if (event.type === 'thread') {
+      void updateMeta(id, { threadId: event.threadId, provider: providerId, model });
+      void updateConversation(id, conversation!.id, { providerThreadId: event.threadId });
+    }
+    if (event.type === 'message') finalResponse += event.text;
+    if (event.type === 'tool' || event.type === 'reasoning' || event.type === 'status') void appendTurnTrace(id, event.type === 'tool' ? `${event.name}${event.detail ? `: ${event.detail}` : ''}` : event.type === 'reasoning' ? event.text : event.text);
     send(res, 'agent', event);
   };
 
@@ -191,12 +408,11 @@ app.post('/api/sessions/:id/chat', async (req, res) => {
 
   try {
     await ensureAgentsFile(id);
-    await snapshotDiagram(id);
     await provider.run(
       {
         prompt,
         workspace: sessionDir(id),
-        threadId: newThread ? undefined : meta.threadId,
+        threadId: newThread ? undefined : conversation.providerThreadId,
         model: model || undefined,
         effort: effort || undefined,
         signal: controller.signal,
@@ -207,8 +423,17 @@ app.post('/api/sessions/:id/chat', async (req, res) => {
     // does not have to race the watcher.
     const source = await readDiagram(id);
     if (source !== null) send(res, 'diagram', { source });
+    await finishAgentTurn(id, controller.signal.aborted ? 'interrupted' : 'completed', { finalResponse });
+    const finalState = await getDiagramState(id);
+    if (finalState) send(res, 'diagram', finalState);
   } catch (err) {
     send(res, 'agent', { type: 'error', message: err instanceof Error ? err.message : String(err) });
+    await finishAgentTurn(id, controller.signal.aborted ? 'interrupted' : 'failed', {
+      finalResponse,
+      error: err instanceof Error ? err.message : String(err),
+    }).catch(() => undefined);
+    const finalState = await getDiagramState(id).catch(() => null);
+    if (finalState) send(res, 'diagram', finalState);
   } finally {
     running.delete(id);
     send(res, 'agent', { type: 'done' });
@@ -230,8 +455,12 @@ if (existsSync(WEB_DIST)) {
   app.get('*', (_req, res) => res.sendFile(join(WEB_DIST, 'index.html')));
 }
 
-await ensureRoot();
-app.listen(PORT, HOST, () => {
-  console.log(`MDVE server on http://${HOST}:${PORT}`);
-  if (!existsSync(WEB_DIST)) console.log('web/dist not built — run `npm run dev:web` for the UI');
-});
+export { app };
+
+if (process.env.MDVE_NO_LISTEN !== '1') {
+  await ensureRoot();
+  app.listen(PORT, HOST, () => {
+    console.log(`MDVE server ready on http://${HOST}:${PORT} (version ${VERSION})`);
+    if (!existsSync(WEB_DIST)) console.log('web/dist not built — run `npm run dev:web` for the UI');
+  });
+}

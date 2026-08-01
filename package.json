@@ -1,7 +1,26 @@
 {
   "name": "mdve",
-  "version": "0.1.0",
-  "private": true,
+  "version": "1.0.0",
+  "private": false,
+  "bin": {
+    "mdve": "bin/mdve.mjs"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "README.md",
+    "LICENSE.md",
+    "NOTICE.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mustbearnold/MDVE.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mustbearnold/MDVE/issues"
+  },
+  "homepage": "https://github.com/mustbearnold/MDVE",
+  "license": "SEE LICENSE IN LICENSE.md",
   "type": "module",
   "description": "Mermaid Diagram Visual Editor with an LLM agent that can view and edit the diagram",
   "engines": {
@@ -11,9 +30,14 @@
     "dev": "concurrently -n server,web -c blue,green \"npm:dev:server\" \"npm:dev:web\"",
     "dev:server": "PORT=${MDVE_PORT:-8787} tsx watch server/src/index.ts",
     "dev:web": "vite",
-    "build": "vite build",
-    "start": "NODE_ENV=production tsx server/src/index.ts",
-    "test": "tsx --test",
+    "build:web": "vite build",
+    "build:server": "node scripts/build-server.mjs",
+    "build": "npm run build:web && npm run build:server",
+    "start": "NODE_ENV=production node dist/server/index.js",
+    "prepack": "npm run build",
+    "verify:artifact": "node scripts/check-release-artifact.mjs",
+    "verify:licenses": "node scripts/check-production-licenses.mjs",
+    "test": "tsx --test server/src/api.test.ts server/src/sessions.test.ts web/src/components/WorkbenchTabs.test.ts web/src/mermaid/mutate.test.ts web/src/state/persistence.test.ts web/src/state/store.persistence.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

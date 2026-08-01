@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { ApiError } from '../api';
 import { createDiagramPersistence, type SaveStatus } from './persistence';
 
 const wait = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -50,5 +51,26 @@ test('a failed write stays retryable and reports its state', async () => {
   assert.equal(attempts, 2);
   assert.deepEqual(persistence.status('alpha'), { state: 'saved' });
   assert.equal(states.at(-1)?.state, 'saved');
+  persistence.dispose();
+});
+
+test('a stale write exposes the durable current source for conflict resolution', async () => {
+  const persistence = createDiagramPersistence(
+    async () => {
+      throw new ApiError('409 Revision conflict', 409, { revision: 4, source: 'flowchart TD\n  current[Current]\n' });
+    },
+    { delayMs: 0 },
+  );
+
+  persistence.seed('alpha', 3);
+  persistence.schedule('alpha', 'flowchart TD\n  mine[Mine]\n');
+  await persistence.flush('alpha');
+
+  assert.deepEqual(persistence.status('alpha'), {
+    state: 'conflict',
+    message: '409 Revision conflict',
+    currentSource: 'flowchart TD\n  current[Current]\n',
+    actualRevision: 4,
+  });
   persistence.dispose();
 });

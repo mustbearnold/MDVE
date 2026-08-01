@@ -1,10 +1,14 @@
+import { ApiError } from '../api';
+
 export type SaveStatus =
-  | { state: 'saved' }
+  | { state: 'saved'; historyAvailable?: boolean }
   | { state: 'saving' }
-  | { state: 'error'; message: string };
+  | { state: 'error'; message: string }
+  | { state: 'conflict'; message: string; currentSource: string; actualRevision: number };
 
 interface SessionSlot {
   latestSource: string;
+  baseRevision?: number;
   version: number;
   dirty: boolean;
   timer?: ReturnType<typeof setTimeout>;
@@ -15,10 +19,11 @@ interface SessionSlot {
 interface PersistenceOptions {
   delayMs?: number;
   onStatus?: (sessionId: string, status: SaveStatus) => void;
+  onSaved?: (sessionId: string, result: unknown) => void;
 }
 
 export function createDiagramPersistence(
-  save: (sessionId: string, source: string) => Promise<unknown>,
+  save: (sessionId: string, source: string, expectedRevision?: number) => Promise<unknown>,
   options: PersistenceOptions = {},
 ) {
   const delayMs = options.delayMs ?? 250;
@@ -65,14 +70,36 @@ export function createDiagramPersistence(
         setStatus(sessionId, slot, { state: 'saving' });
 
         try {
-          await save(sessionId, source);
+          const result = await save(sessionId, source, slot.baseRevision);
+          if (result && typeof result === 'object' && 'revision' in result && typeof result.revision === 'number') {
+            slot.baseRevision = result.revision;
+          }
+          options.onSaved?.(sessionId, result);
         } catch (error) {
           slot.dirty = true;
           failedVersion = version;
-          setStatus(sessionId, slot, {
-            state: 'error',
-            message: error instanceof Error ? error.message : String(error),
-          });
+          if (
+            error instanceof ApiError &&
+            error.status === 409 &&
+            error.payload &&
+            typeof error.payload === 'object' &&
+            'source' in error.payload &&
+            typeof error.payload.source === 'string' &&
+            'revision' in error.payload &&
+            typeof error.payload.revision === 'number'
+          ) {
+            setStatus(sessionId, slot, {
+              state: 'conflict',
+              message: error.message,
+              currentSource: error.payload.source,
+              actualRevision: error.payload.revision,
+            });
+          } else {
+            setStatus(sessionId, slot, {
+              state: 'error',
+              message: error instanceof Error ? error.message : String(error),
+            });
+          }
           return;
         }
       }
@@ -95,6 +122,11 @@ export function createDiagramPersistence(
   };
 
   return {
+    seed(sessionId: string, revision: number): void {
+      const slot = slotFor(sessionId);
+      slot.baseRevision = revision;
+    },
+
     schedule(sessionId: string, source: string): void {
       const slot = slotFor(sessionId);
       slot.latestSource = source;

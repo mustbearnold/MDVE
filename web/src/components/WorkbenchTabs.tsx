@@ -3,6 +3,7 @@ export const WORKBENCH_VIEWS = [
   { id: 'source', label: 'Source' },
   { id: 'inspector', label: 'Inspector' },
   { id: 'agent', label: 'Agent' },
+  { id: 'history', label: 'History' },
 ] as const;
 
 export type WorkbenchView = (typeof WORKBENCH_VIEWS)[number]['id'];

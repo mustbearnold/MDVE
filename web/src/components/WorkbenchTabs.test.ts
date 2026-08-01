@@ -18,9 +18,9 @@ test('workbench tabs expose every narrow-layout pane with one active view', () =
     }),
   );
 
-  assert.equal(WORKBENCH_VIEWS.length, 4);
+  assert.equal(WORKBENCH_VIEWS.length, 5);
   assert.equal((html.match(/aria-pressed="true"/g) ?? []).length, 1);
-  assert.equal((html.match(/aria-pressed="false"/g) ?? []).length, 3);
+  assert.equal((html.match(/aria-pressed="false"/g) ?? []).length, 4);
 
   for (const view of WORKBENCH_VIEWS) {
     assert.match(html, new RegExp(`aria-controls="workbench-${view.id}"`));

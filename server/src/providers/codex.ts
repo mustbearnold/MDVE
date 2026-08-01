@@ -1,144 +1,222 @@
 /**
- * Codex CLI provider.
+ * Codex app-server provider.
  *
- * Uses the locally installed, already-authenticated `codex` binary, so the
- * user's ChatGPT subscription is the credential — MDVE never touches tokens.
- * The agent edits the diagram by editing `diagram.mmd` inside the session
- * workspace with its own file tools; the server watches that file.
+ * MDVE speaks the documented stdio JSON-RPC surface instead of reading Codex's
+ * private credential/cache files or guessing the shape of `codex exec` events.
+ * The installed Codex CLI owns authentication and model entitlement discovery.
  */
 
-import { spawn } from 'node:child_process';
-import { access, readFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
-import { createInterface } from 'node:readline';
+import { spawn, type ChildProcessWithoutNullStreams, execFile } from 'node:child_process';
+import { createInterface, type Interface } from 'node:readline';
+import { promisify } from 'node:util';
 
 import type { AgentEvent, ModelCatalog, ModelInfo, Provider, RunOptions } from './types.js';
 
+const execFileAsync = promisify(execFile);
 const CODEX_BIN = process.env.MDVE_CODEX_BIN ?? 'codex';
-const CODEX_HOME = process.env.CODEX_HOME ?? join(homedir(), '.codex');
+export const CODEX_COMPATIBILITY_RANGE = '>=0.146.0 <0.147.0';
+const CLIENT_VERSION = process.env.MDVE_VERSION ?? '1.0.0';
 
-/**
- * User config is skipped by default: it pulls in the user's MCP servers,
- * skills and hooks, which slow every turn down and are irrelevant here.
- * Authentication still comes from CODEX_HOME/auth.json either way. Because the
- * config is skipped, the model and reasoning effort it declares are read
- * separately (see readConfigDefaults) and passed on the command line, so MDVE
- * still honours the user's chosen model.
- */
-const IGNORE_USER_CONFIG = process.env.MDVE_CODEX_USER_CONFIG !== '1';
-
-/** Used only when Codex has never written its model cache. */
-const FALLBACK_MODELS: ModelInfo[] = [
-  { id: 'gpt-5.6-sol', label: 'GPT-5.6-Sol', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
-  { id: 'gpt-5.6-terra', label: 'GPT-5.6-Terra', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
-  { id: 'gpt-5.6-luna', label: 'GPT-5.6-Luna', efforts: ['low', 'medium', 'high', 'xhigh'] },
-];
-
-interface CachedModel {
-  slug?: string;
-  display_name?: string;
-  visibility?: string;
-  priority?: number;
-  context_window?: number;
-  default_reasoning_level?: string;
-  supported_reasoning_levels?: { effort?: string }[];
-  upgrade?: { model?: string } | null;
+interface JsonRpcResponse {
+  id?: string | number;
+  result?: unknown;
+  error?: { code?: number; message?: string; data?: unknown };
 }
 
-/**
- * Codex refreshes `models_cache.json` from the account's entitlements, so it is
- * the only accurate source for which models this subscription can actually use.
- */
-async function readModelCache(): Promise<ModelInfo[]> {
-  try {
-    const raw = JSON.parse(await readFile(join(CODEX_HOME, 'models_cache.json'), 'utf8')) as {
-      models?: CachedModel[];
-    };
-    const models = (raw.models ?? [])
-      .filter((m) => m.slug && m.visibility !== 'hide')
-      .sort((a, b) => (a.priority ?? 999) - (b.priority ?? 999))
-      .map<ModelInfo>((m) => ({
-        id: m.slug!,
-        label: m.display_name ?? m.slug!,
-        efforts: (m.supported_reasoning_levels ?? [])
-          .map((l) => l.effort)
-          .filter((e): e is string => Boolean(e)),
-        defaultEffort: m.default_reasoning_level,
-        deprecated: m.upgrade?.model ? `superseded by ${m.upgrade.model}` : undefined,
-        contextWindow: m.context_window,
-      }));
-    return models.length > 0 ? models : FALLBACK_MODELS;
-  } catch {
-    return FALLBACK_MODELS;
-  }
+interface JsonRpcNotification {
+  method?: string;
+  params?: unknown;
+  id?: string | number;
 }
 
-/**
- * Minimal reader for the two top-level keys MDVE cares about. Only lines before
- * the first `[table]` header are top level, which is all we want — profile and
- * project overrides are out of scope here.
- */
-async function readConfigDefaults(): Promise<{ model?: string; effort?: string }> {
-  try {
-    const text = await readFile(join(CODEX_HOME, 'config.toml'), 'utf8');
-    const out: { model?: string; effort?: string } = {};
-    for (const line of text.split('\n')) {
-      const trimmed = line.trim();
-      if (trimmed.startsWith('[')) break;
-      const m = /^model\s*=\s*"([^"]+)"/.exec(trimmed);
-      if (m) out.model = m[1];
-      const e = /^model_reasoning_effort\s*=\s*"([^"]+)"/.exec(trimmed);
-      if (e) out.effort = e[1];
-    }
-    return out;
-  } catch {
-    return {};
-  }
+interface PendingRequest {
+  resolve: (value: unknown) => void;
+  reject: (reason?: unknown) => void;
 }
 
-interface CodexItem {
+interface CodexModel {
   id?: string;
-  type?: string;
-  text?: string;
-  message?: string;
-  command?: string;
-  aggregated_output?: string;
-  path?: string;
-  changes?: unknown;
-  query?: string;
-  [key: string]: unknown;
+  model?: string;
+  displayName?: string;
+  hidden?: boolean;
+  upgrade?: string | null;
+  defaultReasoningEffort?: string;
+  supportedReasoningEfforts?: Array<{ reasoningEffort?: string }>;
+  isDefault?: boolean;
 }
 
-function describeItem(item: CodexItem): AgentEvent | null {
+interface CodexAccount {
+  type?: string;
+  email?: string | null;
+  planType?: string;
+}
+
+interface ThreadResponse {
+  thread?: { id?: string };
+}
+
+interface TurnResponse {
+  turn?: { id?: string; status?: string };
+}
+
+interface TurnCompletedParams {
+  threadId?: string;
+  turn?: { id?: string; status?: string; error?: { message?: string } | null };
+}
+
+interface ThreadItem {
+  type?: string;
+  id?: string;
+  text?: string;
+  command?: string;
+  changes?: Array<{ path?: string }>;
+  summary?: string[];
+  content?: string[];
+  aggregatedOutput?: string;
+}
+
+function parseVersion(raw: string | null): { major: number; minor: number; patch: number } | null {
+  const match = raw?.match(/(\d+)\.(\d+)\.(\d+)/);
+  if (!match) return null;
+  return { major: Number(match[1]), minor: Number(match[2]), patch: Number(match[3]) };
+}
+
+function isSupportedVersion(raw: string | null): boolean {
+  const version = parseVersion(raw);
+  return Boolean(version && version.major === 0 && version.minor === 146);
+}
+
+function modelInfo(model: CodexModel): ModelInfo | null {
+  const id = model.id ?? model.model;
+  if (!id || model.hidden) return null;
+  const efforts = (model.supportedReasoningEfforts ?? [])
+    .map((option) => option.reasoningEffort)
+    .filter((effort): effort is string => Boolean(effort));
+  return {
+    id,
+    label: model.displayName ?? id,
+    efforts,
+    defaultEffort: model.defaultReasoningEffort,
+    deprecated: model.upgrade ? `superseded by ${model.upgrade}` : undefined,
+  };
+}
+
+function describeItem(item: ThreadItem): AgentEvent | null {
   switch (item.type) {
-    case 'agent_message':
+    case 'agentMessage':
       return item.text ? { type: 'message', text: item.text } : null;
     case 'reasoning':
-      return item.text ? { type: 'reasoning', text: item.text } : null;
-    case 'command_execution':
+      return item.summary?.length || item.content?.length
+        ? { type: 'reasoning', text: [...(item.summary ?? []), ...(item.content ?? [])].join('\n') }
+        : null;
+    case 'commandExecution':
       return { type: 'tool', name: 'shell', detail: item.command };
-    case 'file_change': {
-      const changes = item.changes;
-      const paths = Array.isArray(changes)
-        ? changes
-            .map((c) => (c && typeof c === 'object' ? (c as { path?: string }).path : undefined))
-            .filter(Boolean)
-            .join(', ')
-        : item.path;
-      return { type: 'tool', name: 'edit', detail: paths ?? undefined };
+    case 'fileChange': {
+      const paths = (item.changes ?? []).map((change) => change.path).filter(Boolean).join(', ');
+      return { type: 'tool', name: 'edit', detail: paths || undefined };
     }
-    case 'mcp_tool_call':
-      return { type: 'tool', name: 'mcp', detail: String(item.tool ?? '') };
-    case 'web_search':
-      return { type: 'tool', name: 'search', detail: item.query };
-    case 'error':
-      // Item-level errors are usually advisories (context budget notices, tool
-      // hiccups the agent recovers from). Real failures arrive as turn.failed
-      // or a non-zero exit, so keep these in the trace instead of the message.
-      return { type: 'tool', name: 'notice', detail: item.message ?? 'unknown Codex error' };
+    case 'mcpToolCall':
+      return { type: 'tool', name: 'mcp' };
+    case 'webSearch':
+      return { type: 'tool', name: 'search' };
     default:
       return null;
+  }
+}
+
+class AppServerClient {
+  readonly child: ChildProcessWithoutNullStreams;
+  readonly lines: Interface;
+  private readonly pending = new Map<string | number, PendingRequest>();
+  private nextId = 1;
+  private closed = false;
+
+  private constructor(private readonly stderrTail: { value: string }, child: ChildProcessWithoutNullStreams) {
+    this.child = child;
+    this.lines = createInterface({ input: child.stdout });
+    this.lines.on('line', (line) => this.receive(line));
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderrTail.value = `${stderrTail.value}${chunk.toString()}`.slice(-4000);
+    });
+    child.on('error', (error) => this.fail(error));
+    child.on('close', (code, signal) => {
+      if (!this.closed && code !== 0) this.fail(new Error(`Codex app-server exited (${code ?? signal ?? 'unknown'})`));
+      else if (!this.closed) this.fail(new Error('Codex app-server closed before completing the request'));
+    });
+  }
+
+  static async start(): Promise<AppServerClient> {
+    const stderrTail = { value: '' };
+    const child = spawn(CODEX_BIN, ['app-server', '--stdio'], {
+      env: process.env,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    const client = new AppServerClient(stderrTail, child);
+    await client.request('initialize', {
+      clientInfo: { name: 'mdve', title: 'MDVE', version: CLIENT_VERSION },
+      capabilities: { experimentalApi: false, requestAttestation: false },
+    });
+    client.notify('initialized');
+    return client;
+  }
+
+  private receive(line: string): void {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('{')) return;
+    let message: JsonRpcResponse & JsonRpcNotification;
+    try {
+      message = JSON.parse(trimmed) as JsonRpcResponse & JsonRpcNotification;
+    } catch {
+      return;
+    }
+    if (message.id !== undefined && (message.result !== undefined || message.error !== undefined)) {
+      const waiter = this.pending.get(message.id);
+      if (!waiter) return;
+      this.pending.delete(message.id);
+      if (message.error) waiter.reject(new Error(message.error.message ?? 'Codex app-server request failed'));
+      else waiter.resolve(message.result);
+      return;
+    }
+    if (message.id !== undefined && message.method) {
+      // MDVE deliberately runs with approvalPolicy=never and does not expose a
+      // second tool-protocol surface. Reply explicitly so an unexpected server
+      // request cannot leave a Conversation hanging forever.
+      this.write({ id: message.id, error: { code: -32601, message: `MDVE does not implement ${message.method}` } });
+    }
+  }
+
+  private fail(error: Error): void {
+    for (const waiter of this.pending.values()) waiter.reject(error);
+    this.pending.clear();
+  }
+
+  private write(message: unknown): void {
+    if (!this.closed && !this.child.stdin.destroyed) this.child.stdin.write(`${JSON.stringify(message)}\n`);
+  }
+
+  notify(method: string, params?: unknown): void {
+    this.write(params === undefined ? { method } : { method, params });
+  }
+
+  request<T = unknown>(method: string, params: unknown): Promise<T> {
+    if (this.closed) return Promise.reject(new Error('Codex app-server is closed'));
+    const id = this.nextId++;
+    return new Promise<T>((resolve, reject) => {
+      this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject });
+      this.write({ id, method, params });
+    });
+  }
+
+  close(): void {
+    if (this.closed) return;
+    this.closed = true;
+    this.lines.close();
+    this.child.kill('SIGTERM');
+    this.fail(new Error('Codex app-server closed'));
+  }
+
+  get diagnostics(): string {
+    return this.stderrTail.value;
   }
 }
 
@@ -146,150 +224,167 @@ export class CodexProvider implements Provider {
   id = 'codex';
   label = 'Codex (ChatGPT subscription)';
 
-  async catalog(): Promise<ModelCatalog> {
-    const [models, config] = await Promise.all([readModelCache(), readConfigDefaults()]);
-    const defaultModel = models.some((m) => m.id === config.model) ? config.model : models[0]?.id;
-    return {
-      models,
-      defaultModel,
-      defaultEffort: config.effort ?? models.find((m) => m.id === defaultModel)?.defaultEffort,
-    };
+  private async installedVersion(): Promise<string | null> {
+    try {
+      const result = await execFileAsync(CODEX_BIN, ['--version'], { env: process.env });
+      return result.stdout.trim() || null;
+    } catch {
+      return null;
+    }
   }
 
   async status(): Promise<{ ok: boolean; detail: string }> {
+    const version = await this.installedVersion();
+    if (!version) return { ok: false, detail: `\`${CODEX_BIN}\` was not found on PATH` };
+    if (!isSupportedVersion(version)) return { ok: false, detail: `Codex ${version} is outside MDVE's tested range ${CODEX_COMPATIBILITY_RANGE}` };
+    let client: AppServerClient | undefined;
     try {
-      await access(join(CODEX_HOME, 'auth.json'));
+      client = await AppServerClient.start();
+      const result = await client.request<{ account?: CodexAccount | null; requiresOpenaiAuth?: boolean }>('account/read', {});
+      if (!result.account) return { ok: false, detail: 'Codex is not logged in. Run `codex login`, then retry.' };
+      if (result.account.type !== 'chatgpt') return { ok: false, detail: 'MDVE v1 requires a ChatGPT-authenticated Codex account.' };
+      return { ok: true, detail: `${version} · ${result.account.email ?? 'ChatGPT account'}` };
     } catch {
-      return { ok: false, detail: `Not logged in. Run: ${CODEX_BIN} login` };
+      return { ok: false, detail: `Codex app-server is unavailable for ${version}` };
+    } finally {
+      client?.close();
     }
+  }
 
-    const version = await new Promise<string | null>((resolve) => {
-      const child = spawn(CODEX_BIN, ['--version'], { stdio: ['ignore', 'pipe', 'ignore'] });
-      let out = '';
-      child.stdout.on('data', (d) => (out += d));
-      child.on('error', () => resolve(null));
-      child.on('close', (code) => resolve(code === 0 ? out.trim() : null));
-    });
-
-    if (!version) return { ok: false, detail: `\`${CODEX_BIN}\` not found on PATH` };
-    return { ok: true, detail: version };
+  async catalog(): Promise<ModelCatalog> {
+    const version = await this.installedVersion();
+    if (!version || !isSupportedVersion(version)) return { models: [] };
+    let client: AppServerClient | undefined;
+    try {
+      client = await AppServerClient.start();
+      const result = await client.request<{ data?: CodexModel[] }>('model/list', {});
+      const models = (result.data ?? []).map(modelInfo).filter((model): model is ModelInfo => Boolean(model));
+      const defaultModel = (result.data ?? []).find((model) => model.isDefault)?.id;
+      const defaultInfo = models.find((model) => model.id === defaultModel);
+      return { models, defaultModel, defaultEffort: defaultInfo?.defaultEffort };
+    } catch {
+      return { models: [] };
+    } finally {
+      client?.close();
+    }
   }
 
   async run(opts: RunOptions, emit: (event: AgentEvent) => void): Promise<void> {
-    const args: string[] = ['exec'];
-    if (opts.threadId) {
-      // `resume` rejects -s / -C, and does NOT inherit the sandbox policy of
-      // the session it resumes — it falls back to read-only, which leaves the
-      // agent unable to edit the diagram on any turn after the first. The
-      // config override is the only way to set it here. cwd comes from spawn().
-      args.push('resume', opts.threadId, '-c', 'sandbox_mode="workspace-write"');
-    } else {
-      args.push('-s', 'workspace-write', '-C', opts.workspace);
-    }
-    args.push('--json', '--skip-git-repo-check');
-    if (IGNORE_USER_CONFIG) args.push('--ignore-user-config');
-
-    // With user config ignored, nothing else supplies the model or effort, so
-    // fall back to what config.toml declares rather than Codex's built-in default.
-    const defaults = await this.catalog();
-    const model = opts.model || defaults.defaultModel;
-    const effort = opts.effort || defaults.defaultEffort;
-    if (model) args.push('-m', model);
-    if (effort) args.push('-c', `model_reasoning_effort="${effort}"`);
-    args.push('-');
-
-    const child = spawn(CODEX_BIN, args, {
-      cwd: opts.workspace,
-      env: { ...process.env, CODEX_HOME },
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-
-    const kill = () => child.kill('SIGTERM');
-    opts.signal.addEventListener('abort', kill, { once: true });
-
-    child.stdin.end(opts.prompt);
-
-    let stderrTail = '';
-    child.stderr.on('data', (d: Buffer) => {
-      stderrTail = (stderrTail + d.toString()).slice(-4000);
-    });
-
-    const rl = createInterface({ input: child.stdout });
-    let sawMessage = false;
-
-    rl.on('line', (line) => {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith('{')) return;
-      let event: Record<string, unknown>;
-      try {
-        event = JSON.parse(trimmed);
-      } catch {
+    const client = await AppServerClient.start();
+    let threadId = opts.threadId;
+    let turnId: string | undefined;
+    let interruptTimer: ReturnType<typeof setTimeout> | undefined;
+    const interrupt = () => {
+      if (!threadId || !turnId) {
+        client.close();
         return;
       }
+      void client.request('turn/interrupt', { threadId, turnId }).catch(() => undefined);
+      interruptTimer = setTimeout(() => client.close(), 2_000);
+    };
+    opts.signal.addEventListener('abort', interrupt, { once: true });
 
-      switch (event.type) {
-        case 'thread.started':
-          if (typeof event.thread_id === 'string') emit({ type: 'thread', threadId: event.thread_id });
-          break;
-        case 'turn.started':
-          emit({ type: 'status', text: 'thinking' });
-          break;
-        case 'item.completed': {
-          const mapped = describeItem((event.item ?? {}) as CodexItem);
-          if (mapped) {
-            if (mapped.type === 'message') sawMessage = true;
-            emit(mapped);
-          }
-          break;
-        }
-        case 'turn.completed': {
-          const usage = event.usage as
-            | { input_tokens?: number; output_tokens?: number; cached_input_tokens?: number }
-            | undefined;
-          if (usage) {
-            emit({
-              type: 'usage',
-              input: usage.input_tokens ?? 0,
-              output: usage.output_tokens ?? 0,
-              cached: usage.cached_input_tokens,
-            });
-          }
-          break;
-        }
-        case 'turn.failed':
-          emit({
-            type: 'error',
-            message:
-              (event.error as { message?: string } | undefined)?.message ?? 'Codex turn failed',
-          });
-          break;
+    try {
+      if (threadId) {
+        const result = await client.request<ThreadResponse>('thread/resume', {
+          threadId,
+          cwd: opts.workspace,
+          sandbox: 'workspace-write',
+          approvalPolicy: 'never',
+        });
+        threadId = result.thread?.id ?? threadId;
+        emit({ type: 'thread', threadId });
+      } else {
+        const result = await client.request<ThreadResponse>('thread/start', {
+          model: opts.model,
+          cwd: opts.workspace,
+          sandbox: 'workspace-write',
+          approvalPolicy: 'never',
+          threadSource: 'appServer',
+        });
+        threadId = result.thread?.id;
+        if (!threadId) throw new Error('Codex app-server did not return a thread identity');
+        emit({ type: 'thread', threadId });
       }
-    });
 
-    await new Promise<void>((resolve) => {
-      child.on('error', (err) => {
-        emit({ type: 'error', message: `Failed to start ${CODEX_BIN}: ${err.message}` });
-        resolve();
+      const result = await client.request<TurnResponse>('turn/start', {
+        threadId,
+        input: [{ type: 'text', text: opts.prompt, text_elements: [] }],
+        cwd: opts.workspace,
+        model: opts.model,
+        effort: opts.effort,
+        approvalPolicy: 'never',
+        sandboxPolicy: {
+          type: 'workspaceWrite',
+          writableRoots: [opts.workspace],
+          networkAccess: false,
+          excludeTmpdirEnvVar: false,
+          excludeSlashTmp: false,
+        },
       });
-      child.on('close', (code) => {
-        opts.signal.removeEventListener('abort', kill);
-        if (code !== 0 && !opts.signal.aborted) {
-          const detail = stderrTail.split('\n').filter(Boolean).slice(-3).join('\n');
-          emit({ type: 'error', message: `codex exited with code ${code}\n${detail}` });
-        } else if (code === 0 && !sawMessage) {
-          emit({ type: 'status', text: 'turn finished with no message' });
-        }
-        resolve();
-      });
-    });
-  }
-}
+      turnId = result.turn?.id;
+      emit({ type: 'status', text: 'thinking' });
 
-/** Reads the raw last-message file if a caller needs it outside the stream. */
-export async function readIfExists(path: string): Promise<string | null> {
-  try {
-    return await readFile(path, 'utf8');
-  } catch {
-    return null;
+      await new Promise<void>((resolve, reject) => {
+        const onLine = (line: string) => {
+          let message: JsonRpcNotification;
+          try {
+            message = JSON.parse(line) as JsonRpcNotification;
+          } catch {
+            return;
+          }
+          const params = (message.params ?? {}) as Record<string, unknown>;
+          switch (message.method) {
+            case 'thread/started': {
+              const id = ((params.thread as { id?: string } | undefined)?.id);
+              if (id) {
+                threadId = id;
+                emit({ type: 'thread', threadId: id });
+              }
+              break;
+            }
+            case 'turn/started':
+              turnId = ((params.turn as { id?: string } | undefined)?.id) ?? turnId;
+              emit({ type: 'status', text: 'thinking' });
+              break;
+            case 'item/agentMessage/delta':
+              if (typeof params.delta === 'string') emit({ type: 'message', text: params.delta });
+              break;
+            case 'item/completed': {
+              const mapped = describeItem((params.item ?? {}) as ThreadItem);
+              if (mapped && mapped.type !== 'message') emit(mapped);
+              break;
+            }
+            case 'turn/completed': {
+              const turn = (params as TurnCompletedParams).turn;
+              const status = turn?.status;
+              if (status === 'failed') reject(new Error(turn?.error?.message ?? 'Codex turn failed'));
+              else resolve();
+              break;
+            }
+            case 'error': {
+              const error = params as { message?: string };
+              emit({ type: 'error', message: error.message ?? 'Codex app-server error' });
+              break;
+            }
+            case 'warning':
+              emit({ type: 'tool', name: 'warning', detail: typeof params.message === 'string' ? params.message : undefined });
+              break;
+            default:
+              if (message.method) emit({ type: 'tool', name: `app-server:${message.method}` });
+          }
+        };
+        const lineListener = (line: string) => onLine(line);
+        client.lines.on('line', lineListener);
+        client.child.once('error', reject);
+        client.child.once('close', (code) => {
+          if (code !== 0) reject(new Error(`Codex app-server exited before turn completion (${code ?? 'unknown'})`));
+        });
+      });
+    } finally {
+      opts.signal.removeEventListener('abort', interrupt);
+      if (interruptTimer) clearTimeout(interruptTimer);
+      client.close();
+    }
   }
 }

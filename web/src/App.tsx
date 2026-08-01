@@ -4,6 +4,7 @@ import { subscribeDiagram } from './api';
 import { ChatPanel } from './components/ChatPanel';
 import { CodePane } from './components/CodePane';
 import { Inspector } from './components/Inspector';
+import { HistoryPanel } from './components/HistoryPanel';
 import { Preview } from './components/Preview';
 import { Toolbar } from './components/Toolbar';
 import { WorkbenchTabs, type WorkbenchView } from './components/WorkbenchTabs';
@@ -81,7 +82,7 @@ export function App(): JSX.Element {
           <Preview />
         </section>
         <div
-          className={`pane pane-side${activeView === 'inspector' || activeView === 'agent' ? ' pane-active' : ''}`}
+          className={`pane pane-side${activeView === 'inspector' || activeView === 'agent' || activeView === 'history' ? ' pane-active' : ''}${activeView === 'history' ? ' pane-history-active' : ''}`}
         >
           <div
             className={`side-view side-inspector${activeView === 'inspector' ? ' side-view-active' : ''}`}
@@ -94,6 +95,12 @@ export function App(): JSX.Element {
             id="workbench-agent"
           >
             <ChatPanel />
+          </div>
+          <div
+            className={`side-view side-history${activeView === 'history' ? ' side-view-active' : ''}`}
+            id="workbench-history"
+          >
+            <HistoryPanel />
           </div>
         </div>
       </main>

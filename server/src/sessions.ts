@@ -1,20 +1,19 @@
 /**
- * Session workspaces.
+ * Durable Diagram workspaces.
  *
- * Each session is a directory holding `diagram.mmd` plus an AGENTS.md that
- * tells the agent what the file is for. Giving the agent a real file to edit
- * means we reuse its native read/write tools instead of inventing a tool
- * protocol, and the file is also the crash-safe store for the editor.
+ * `diagram.mmd` remains the canonical source. `revision.json`, the recovery
+ * ledger, Conversations, and turn records are durable evidence around that
+ * source; none of them is a second diagram model.
  */
 
-import { randomUUID } from 'node:crypto';
-import { mkdir, open, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { mkdir, open, readFile, readdir, rename, stat, unlink } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-export const ROOT = process.env.MDVE_HOME ?? join(homedir(), '.mdve');
-export const SESSIONS_DIR = join(ROOT, 'sessions');
-
+export const DATA_SCHEMA_VERSION = 1;
+export let ROOT = process.env.MDVE_HOME ?? join(homedir(), '.mdve');
+export let SESSIONS_DIR = join(ROOT, 'sessions');
 export const DIAGRAM_FILE = 'diagram.mmd';
 
 export const DEFAULT_DIAGRAM = `flowchart TD
@@ -24,6 +23,12 @@ export const DEFAULT_DIAGRAM = `flowchart TD
   decide -->|no| collect
   build --> ship([Ship])
 `;
+
+/** Test harness hook; normal application code uses the process environment. */
+export function setDataRoot(root: string): void {
+  ROOT = root;
+  SESSIONS_DIR = join(root, 'sessions');
+}
 
 const AGENTS_MD = `# MDVE Diagram workspace
 
@@ -39,34 +44,183 @@ Rules:
   plain flowchart syntax.
 - Never use a Mermaid keyword as a node id: \`call\`, \`end\`, \`class\`, \`classDef\`,
   \`click\`, \`callback\`, \`href\`, \`style\`, \`linkStyle\`, \`graph\`, \`flowchart\`,
-  \`subgraph\`, \`direction\`, \`default\`, \`interpolate\`. The parser reports these as
-  an error on the *following* line, so they are hard to track down. Prefix or
-  rephrase instead (\`toolCall\`, \`finish\`).
+  \`subgraph\`, \`direction\`, \`default\`, \`interpolate\`. Prefix or rephrase it.
 - Preserve existing node ids unless asked to rename them; the editor tracks
   selection by id.
 - \`${DIAGRAM_FILE}\` must contain a diagram and nothing else. Never park research
-  notes, prose or citations in it — a few \`%%\` comments are the limit.
-- You may create scratch files here (notes, research findings, drafts) when a
-  task genuinely needs them. Only \`${DIAGRAM_FILE}\` is rendered.
-- Do not run builds or install anything. There is no project here, and the
-  sandbox has no network access — local fetches will fail. Use your web search
-  tool instead, which runs outside the sandbox.
+  notes, prose or citations in it.
 - Reply with a one or two sentence summary of what you changed. Do not paste the
   whole diagram back; the user can already see it.
 `;
+
+export type RevisionOrigin = 'manual' | 'import' | 'agent' | 'restore' | 'system';
+export type AgentTurnStatus = 'running' | 'completed' | 'stopped' | 'failed' | 'interrupted';
+
+export interface AgentLease {
+  turnId: string;
+  conversationId: string;
+  startedAt: number;
+}
 
 export interface SessionMeta {
   id: string;
   title: string;
   createdAt: number;
   updatedAt: number;
+  lastActivityAt: number;
+  schemaVersion: number;
+  revision: number;
+  checksum: string;
+  archived?: boolean;
+  trashed?: boolean;
+  historyDegraded?: boolean;
+  selectedConversationId?: string;
+  agentLease?: AgentLease;
+  /** Compatibility fields retained while older workspaces migrate. */
   threadId?: string;
   provider?: string;
   model?: string;
 }
 
+export interface RevisionRecord {
+  revision: number;
+  checksum: string;
+  updatedAt: number;
+  origin: RevisionOrigin;
+  turnId?: string;
+}
+
+export interface RecoveryPoint {
+  id: string;
+  revision: number;
+  checksum: string;
+  createdAt: number;
+  origin: RevisionOrigin;
+  file: string;
+  turnId?: string;
+  outcome?: AgentTurnStatus;
+}
+
+export interface ConversationMessage {
+  id: string;
+  role: 'user' | 'agent' | 'system';
+  text: string;
+  createdAt: number;
+  trace?: string[];
+  error?: boolean;
+}
+
+export interface ConversationRecord {
+  id: string;
+  title: string;
+  provider: string;
+  providerThreadId?: string;
+  createdAt: number;
+  updatedAt: number;
+  archived?: boolean;
+  status: 'ready' | 'running' | 'stopped' | 'failed' | 'interrupted' | 'cannot-resume';
+  startingRevision: number;
+  lastRevision: number;
+  messages: ConversationMessage[];
+}
+
+export interface AgentTurnRecord {
+  id: string;
+  conversationId: string;
+  provider: string;
+  providerThreadId?: string;
+  model?: string;
+  effort?: string;
+  prompt: string;
+  status: AgentTurnStatus;
+  startedAt: number;
+  endedAt?: number;
+  startingRevision: number;
+  endingRevision?: number;
+  preRecoveryPointId: string;
+  postRecoveryPointId?: string;
+  finalResponse?: string;
+  error?: string;
+  trace: string[];
+}
+
+export interface DiagramState {
+  revision: number;
+  checksum: string;
+  source: string;
+}
+
+export interface SaveResult {
+  revision: number;
+  checksum: string;
+  origin: RevisionOrigin;
+}
+
+export class RevisionConflictError extends Error {
+  name = 'RevisionConflictError';
+
+  constructor(
+    public readonly expectedRevision: number,
+    public readonly actualRevision: number,
+    public readonly currentSource: string,
+  ) {
+    super(`Diagram changed before this save (expected revision ${expectedRevision}, current revision ${actualRevision})`);
+  }
+}
+
+export class AgentLeaseError extends Error {
+  name = 'AgentLeaseError';
+  constructor(public readonly lease: AgentLease) {
+    super(`Diagram is locked by agent turn ${lease.turnId}`);
+  }
+}
+
+type DurabilityFaultPoint =
+  | 'temporary-create'
+  | 'partial-write'
+  | 'file-sync'
+  | 'close'
+  | 'rename'
+  | 'directory-sync'
+  | 'cleanup';
+
+let faultInjector: ((point: DurabilityFaultPoint) => void) | undefined;
+
+/** Test-only hook used by the fault-injection suite; production leaves it unset. */
+export function setDurabilityFaultInjector(injector?: (point: DurabilityFaultPoint) => void): void {
+  faultInjector = injector;
+}
+
+function fault(point: DurabilityFaultPoint): void {
+  faultInjector?.(point);
+}
+
 function metaPath(id: string): string {
   return join(SESSIONS_DIR, id, 'session.json');
+}
+
+function revisionPath(id: string): string {
+  return join(SESSIONS_DIR, id, 'revision.json');
+}
+
+function historyDir(id: string): string {
+  return join(sessionDir(id), 'history');
+}
+
+function historyManifestPath(id: string): string {
+  return join(historyDir(id), 'index.json');
+}
+
+function conversationsDir(id: string): string {
+  return join(sessionDir(id), 'conversations');
+}
+
+function conversationPath(sessionId: string, conversationId: string): string {
+  return join(conversationsDir(sessionId), `${conversationId}.json`);
+}
+
+function turnPath(id: string): string {
+  return join(sessionDir(id), 'turn.json');
 }
 
 export function sessionDir(id: string): string {
@@ -74,108 +228,94 @@ export function sessionDir(id: string): string {
 }
 
 export function diagramPath(id: string): string {
-  return join(SESSIONS_DIR, id, DIAGRAM_FILE);
+  return join(sessionDir(id), DIAGRAM_FILE);
+}
+
+function checksum(source: string): string {
+  return createHash('sha256').update(source, 'utf8').digest('hex');
+}
+
+function normalizeMeta(input: Partial<SessionMeta> & Pick<SessionMeta, 'id' | 'title' | 'createdAt' | 'updatedAt'>): SessionMeta {
+  return {
+    ...input,
+    id: input.id,
+    title: input.title,
+    createdAt: input.createdAt,
+    updatedAt: input.updatedAt,
+    lastActivityAt: input.lastActivityAt ?? input.updatedAt,
+    schemaVersion: input.schemaVersion ?? DATA_SCHEMA_VERSION,
+    revision: input.revision ?? 0,
+    checksum: input.checksum ?? '',
+  };
+}
+
+async function writeAtomic(path: string, content: string): Promise<void> {
+  const temporaryPath = `${path}.${randomUUID()}.tmp`;
+  let renamed = false;
+  try {
+    fault('temporary-create');
+    const temporaryFile = await open(temporaryPath, 'wx');
+    try {
+      fault('partial-write');
+      await temporaryFile.writeFile(content, 'utf8');
+      fault('file-sync');
+      await temporaryFile.sync();
+    } finally {
+      try {
+        fault('close');
+      } finally {
+        await temporaryFile.close();
+      }
+    }
+
+    fault('rename');
+    await rename(temporaryPath, path);
+    renamed = true;
+
+    const parentDirectory = await open(dirname(path), 'r');
+    try {
+      fault('directory-sync');
+      await parentDirectory.sync();
+    } finally {
+      await parentDirectory.close();
+    }
+  } catch (error) {
+    if (!renamed) {
+      try {
+        fault('cleanup');
+        await unlink(temporaryPath);
+      } catch {
+        /* A failed cleanup is diagnosable on restart; never mask the write error. */
+      }
+    }
+    throw error;
+  }
+}
+
+async function readJson<T>(path: string): Promise<T | null> {
+  try {
+    return JSON.parse(await readFile(path, 'utf8')) as T;
+  } catch {
+    return null;
+  }
 }
 
 async function writeMeta(meta: SessionMeta): Promise<void> {
   await writeAtomic(metaPath(meta.id), JSON.stringify(meta, null, 2));
 }
 
-async function writeAtomic(path: string, content: string): Promise<void> {
-  const temporaryPath = `${path}.${randomUUID()}.tmp`;
-  try {
-    const temporaryFile = await open(temporaryPath, 'wx');
-    try {
-      await temporaryFile.writeFile(content, 'utf8');
-      await temporaryFile.sync();
-    } finally {
-      await temporaryFile.close();
-    }
-
-    await rename(temporaryPath, path);
-
-    const parentDirectory = await open(dirname(path), 'r');
-    try {
-      await parentDirectory.sync();
-    } finally {
-      await parentDirectory.close();
-    }
-  } catch (error) {
-    await unlink(temporaryPath).catch(() => undefined);
-    throw error;
-  }
-}
-
 export async function readMeta(id: string): Promise<SessionMeta | null> {
-  try {
-    return JSON.parse(await readFile(metaPath(id), 'utf8')) as SessionMeta;
-  } catch {
-    return null;
-  }
+  const parsed = await readJson<SessionMeta>(metaPath(id));
+  if (!parsed || typeof parsed.id !== 'string' || typeof parsed.title !== 'string') return null;
+  return normalizeMeta(parsed as Pick<SessionMeta, 'id' | 'title' | 'createdAt' | 'updatedAt'> & Partial<SessionMeta>);
 }
 
-export async function updateMeta(id: string, patch: Partial<SessionMeta>): Promise<SessionMeta | null> {
-  const meta = await readMeta(id);
-  if (!meta) return null;
-  const next = { ...meta, ...patch, id: meta.id, updatedAt: Date.now() };
-  await writeMeta(next);
-  return next;
+async function readRevision(id: string): Promise<RevisionRecord | null> {
+  return readJson<RevisionRecord>(revisionPath(id));
 }
 
-/** Keeps the agent brief current, including in sessions created by older builds. */
-export async function ensureAgentsFile(id: string): Promise<void> {
-  const path = join(sessionDir(id), 'AGENTS.md');
-  try {
-    if ((await readFile(path, 'utf8')) === AGENTS_MD) return;
-  } catch {
-    /* missing — write it */
-  }
-  await writeFile(path, AGENTS_MD, 'utf8');
-}
-
-export async function createSession(opts: { title?: string; source?: string } = {}): Promise<SessionMeta> {
-  const id = randomUUID();
-  const dir = sessionDir(id);
-  await mkdir(dir, { recursive: true });
-  await writeAtomic(join(dir, DIAGRAM_FILE), opts.source ?? DEFAULT_DIAGRAM);
-  await ensureAgentsFile(id);
-  const now = Date.now();
-  const meta: SessionMeta = {
-    id,
-    title: opts.title ?? 'Untitled diagram',
-    createdAt: now,
-    updatedAt: now,
-  };
-  await writeMeta(meta);
-  return meta;
-}
-
-export async function listSessions(): Promise<SessionMeta[]> {
-  await mkdir(SESSIONS_DIR, { recursive: true });
-  const entries = await readdir(SESSIONS_DIR, { withFileTypes: true });
-  const metas: SessionMeta[] = [];
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    const meta = await readMeta(entry.name);
-    if (meta) metas.push(meta);
-  }
-  return metas.sort((a, b) => b.updatedAt - a.updatedAt);
-}
-
-/**
- * Copies the current diagram into `history/` before an agent turn. An agent
- * asked to "replace the diagram" will do exactly that, and in-editor undo only
- * survives while the tab is open.
- */
-export async function snapshotDiagram(id: string): Promise<string | null> {
-  const source = await readDiagram(id);
-  if (source === null || source.trim() === '') return null;
-  const dir = join(sessionDir(id), 'history');
-  await mkdir(dir, { recursive: true });
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const path = join(dir, `${stamp}.mmd`);
-  await writeFile(path, source, 'utf8');
-  return path;
+async function writeRevision(id: string, revision: RevisionRecord): Promise<void> {
+  await writeAtomic(revisionPath(id), JSON.stringify(revision, null, 2));
 }
 
 export async function readDiagram(id: string): Promise<string | null> {
@@ -186,17 +326,547 @@ export async function readDiagram(id: string): Promise<string | null> {
   }
 }
 
-export async function writeDiagram(id: string, source: string): Promise<void> {
+async function writeRecoveryPointFile(
+  id: string,
+  source: string,
+  revision: number,
+  origin: RevisionOrigin,
+  turnId?: string,
+  outcome?: AgentTurnStatus,
+): Promise<RecoveryPoint> {
+  await mkdir(historyDir(id), { recursive: true });
+  const digest = checksum(source);
+  const existing = await readHistory(id);
+  const lifecyclePoint = origin === 'restore' || Boolean(turnId) || Boolean(outcome);
+  const duplicate = lifecyclePoint ? undefined : existing.find((point) => point.checksum === digest);
+  if (duplicate) return duplicate;
+
+  const idValue = randomUUID();
+  const file = `${String(revision).padStart(10, '0')}-${digest.slice(0, 16)}.mmd`;
+  const point: RecoveryPoint = {
+    id: idValue,
+    revision,
+    checksum: digest,
+    createdAt: Date.now(),
+    origin,
+    file,
+    turnId,
+    outcome,
+  };
+  await writeAtomic(join(historyDir(id), file), source);
+  try {
+    await writeAtomic(historyManifestPath(id), JSON.stringify([...existing, point], null, 2));
+  } catch (error) {
+    await markHistoryDegraded(id);
+    throw error;
+  }
+  return point;
+}
+
+async function markHistoryDegraded(id: string): Promise<void> {
+  const meta = await readMeta(id);
+  if (!meta) return;
+  await writeMeta({ ...meta, historyDegraded: true, updatedAt: Date.now() }).catch(() => undefined);
+}
+
+async function clearHistoryDegraded(id: string): Promise<void> {
+  const meta = await readMeta(id);
+  if (!meta || !meta.historyDegraded) return;
+  await writeMeta({ ...meta, historyDegraded: false, updatedAt: Date.now() }).catch(() => undefined);
+}
+
+export async function readHistory(id: string): Promise<RecoveryPoint[]> {
+  const manifest = await readJson<RecoveryPoint[]>(historyManifestPath(id));
+  return Array.isArray(manifest) ? manifest.filter((point) => point && typeof point.file === 'string') : [];
+}
+
+export async function readRecoveryPoint(id: string, pointId: string): Promise<{ point: RecoveryPoint; source: string } | null> {
+  const point = (await readHistory(id)).find((candidate) => candidate.id === pointId);
+  if (!point || !/^[0-9a-f-]+\.mmd$/.test(point.file)) return null;
+  try {
+    const source = await readFile(join(historyDir(id), point.file), 'utf8');
+    if (checksum(source) !== point.checksum) throw new Error('checksum mismatch');
+    return { point, source };
+  } catch {
+    return null;
+  }
+}
+
+async function ensureSessionState(id: string): Promise<SessionMeta | null> {
+  const meta = await readMeta(id);
+  if (!meta) return null;
+  const current = await readDiagram(id);
+  if (current === null) return null;
+  const revision = await readRevision(id);
+  if (revision) {
+    if (meta.revision !== revision.revision || meta.checksum !== revision.checksum || meta.schemaVersion !== DATA_SCHEMA_VERSION) {
+      await writeMeta({
+        ...meta,
+        schemaVersion: DATA_SCHEMA_VERSION,
+        revision: revision.revision,
+        checksum: revision.checksum,
+      }).catch(() => undefined);
+    }
+    return { ...meta, schemaVersion: DATA_SCHEMA_VERSION, revision: revision.revision, checksum: revision.checksum };
+  }
+
+  const initial: RevisionRecord = {
+    revision: Math.max(1, meta.revision || 1),
+    checksum: checksum(current),
+    updatedAt: meta.updatedAt,
+    origin: 'system',
+  };
+  await mkdir(historyDir(id), { recursive: true });
+  await writeRevision(id, initial);
+  const point = await writeRecoveryPointFile(id, current, initial.revision, 'system');
+  await writeMeta({
+    ...meta,
+    schemaVersion: DATA_SCHEMA_VERSION,
+    revision: initial.revision,
+    checksum: initial.checksum,
+    historyDegraded: false,
+    selectedConversationId: meta.selectedConversationId,
+  });
+  void point;
+  return { ...meta, ...initial, schemaVersion: DATA_SCHEMA_VERSION, historyDegraded: false };
+}
+
+const sessionQueues = new Map<string, Promise<unknown>>();
+
+function withSessionLock<T>(id: string, operation: () => Promise<T>): Promise<T> {
+  const previous = sessionQueues.get(id) ?? Promise.resolve();
+  const pending = previous.catch(() => undefined).then(operation);
+  const settled = pending.then(() => undefined, () => undefined).then(() => {
+    if (sessionQueues.get(id) === settled) sessionQueues.delete(id);
+  });
+  sessionQueues.set(id, settled);
+  return pending;
+}
+
+export async function updateMeta(id: string, patch: Partial<SessionMeta>): Promise<SessionMeta | null> {
+  return withSessionLock(id, async () => {
+    const meta = await readMeta(id);
+    if (!meta) return null;
+    const next = normalizeMeta({ ...meta, ...patch, id: meta.id, updatedAt: Date.now() });
+    await writeMeta(next);
+    return next;
+  });
+}
+
+/** Keeps the agent brief current, including in workspaces created by older builds. */
+export async function ensureAgentsFile(id: string): Promise<void> {
+  const path = join(sessionDir(id), 'AGENTS.md');
+  try {
+    if ((await readFile(path, 'utf8')) === AGENTS_MD) return;
+  } catch {
+    /* missing — write it */
+  }
+  await writeAtomic(path, AGENTS_MD);
+}
+
+export async function createSession(opts: { title?: string; source?: string } = {}): Promise<SessionMeta> {
+  const id = randomUUID();
+  const dir = sessionDir(id);
+  await mkdir(dir, { recursive: true });
+  const source = opts.source ?? DEFAULT_DIAGRAM;
+  const now = Date.now();
+  const initial: RevisionRecord = { revision: 1, checksum: checksum(source), updatedAt: now, origin: 'system' };
+  await writeAtomic(join(dir, DIAGRAM_FILE), source);
+  await writeRevision(id, initial);
+  await ensureAgentsFile(id);
+  await writeRecoveryPointFile(id, source, initial.revision, 'system');
+  const meta: SessionMeta = normalizeMeta({
+    id,
+    title: opts.title?.trim() || 'Untitled diagram',
+    createdAt: now,
+    updatedAt: now,
+    lastActivityAt: now,
+    schemaVersion: DATA_SCHEMA_VERSION,
+    revision: initial.revision,
+    checksum: initial.checksum,
+    historyDegraded: false,
+  });
+  await writeMeta(meta);
+  return meta;
+}
+
+export async function listSessions(scope: 'active' | 'archived' | 'all' = 'active', search = ''): Promise<SessionMeta[]> {
+  await mkdir(SESSIONS_DIR, { recursive: true });
+  const entries = await readdir(SESSIONS_DIR, { withFileTypes: true });
+  const metas: SessionMeta[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const meta = await ensureSessionState(entry.name);
+    if (meta) metas.push(meta);
+  }
+  const needle = search.trim().toLocaleLowerCase();
+  const matching = [] as SessionMeta[];
+  for (const meta of metas) {
+    if (meta.trashed || (scope !== 'all' && (scope === 'archived' ? !meta.archived : meta.archived))) continue;
+    if (needle) {
+      const source = (await readDiagram(meta.id)) ?? '';
+      if (!meta.title.toLocaleLowerCase().includes(needle) && !source.toLocaleLowerCase().includes(needle)) continue;
+    }
+    matching.push(meta);
+  }
+  return matching
+    .sort((a, b) => b.lastActivityAt - a.lastActivityAt);
+}
+
+export async function writeDiagram(
+  id: string,
+  source: string,
+  opts: { expectedRevision?: number; origin?: RevisionOrigin; turnId?: string; allowDuringAgent?: boolean } = {},
+): Promise<SaveResult> {
+  return withSessionLock(id, async () => {
+    const meta = await ensureSessionState(id);
+    if (!meta) throw new Error('No such session');
+    if (meta.agentLease && !opts.allowDuringAgent && opts.origin !== 'agent') throw new AgentLeaseError(meta.agentLease);
+    const current = await readDiagram(id);
+    const revision = await readRevision(id);
+    if (current === null || !revision) throw new Error('Diagram durability state is unavailable');
+    if (opts.expectedRevision !== undefined && opts.expectedRevision !== revision.revision) {
+      throw new RevisionConflictError(opts.expectedRevision, revision.revision, current);
+    }
+    if (current === source) return { revision: revision.revision, checksum: revision.checksum, origin: opts.origin ?? 'manual' };
+
+    const next: RevisionRecord = {
+      revision: revision.revision + 1,
+      checksum: checksum(source),
+      updatedAt: Date.now(),
+      origin: opts.origin ?? 'manual',
+      turnId: opts.turnId,
+    };
+    try {
+      await writeAtomic(diagramPath(id), source);
+      await writeRevision(id, next);
+    } catch (error) {
+      // A directory sync can fail after rename has made the new file visible.
+      // Replacing the old source is therefore part of the failed-write path,
+      // not an optional cleanup after a successful writeAtomic call.
+      await writeAtomic(diagramPath(id), current).catch(() => undefined);
+      throw error;
+    }
+
+    const nextMeta = normalizeMeta({
+      ...meta,
+      revision: next.revision,
+      checksum: next.checksum,
+      updatedAt: next.updatedAt,
+      lastActivityAt: next.updatedAt,
+      schemaVersion: DATA_SCHEMA_VERSION,
+    });
+    await writeMeta(nextMeta).catch(() => undefined);
+    return { revision: next.revision, checksum: next.checksum, origin: next.origin };
+  });
+}
+
+export async function getDiagramState(id: string): Promise<DiagramState | null> {
+  const meta = await ensureSessionState(id);
+  if (!meta) return null;
+  const source = await readDiagram(id);
+  const revision = await readRevision(id);
+  if (source === null || !revision) return null;
+  return { revision: revision.revision, checksum: revision.checksum, source };
+}
+
+async function reconcileDiagramUnlocked(
+  id: string,
+  origin: RevisionOrigin,
+  turnId?: string,
+): Promise<SaveResult | null> {
+  const meta = await ensureSessionState(id);
+  const source = await readDiagram(id);
+  const revision = await readRevision(id);
+  if (!meta || source === null || !revision) throw new Error('Diagram durability state is unavailable');
+  const digest = checksum(source);
+  if (digest === revision.checksum) return null;
+  const next: RevisionRecord = {
+    revision: revision.revision + 1,
+    checksum: digest,
+    updatedAt: Date.now(),
+    origin,
+    turnId,
+  };
+  // Agents write the canonical file with their own file tools. Replacing it
+  // again here makes the completion boundary use MDVE's durable primitive
+  // before the new revision is acknowledged.
   await writeAtomic(diagramPath(id), source);
+  await writeRevision(id, next);
+  await writeMeta(normalizeMeta({ ...meta, ...next, schemaVersion: DATA_SCHEMA_VERSION, lastActivityAt: next.updatedAt })).catch(() => undefined);
+  return { revision: next.revision, checksum: next.checksum, origin };
+}
+
+export async function reconcileDiagram(id: string, origin: RevisionOrigin = 'agent', turnId?: string): Promise<SaveResult | null> {
+  return withSessionLock(id, () => reconcileDiagramUnlocked(id, origin, turnId));
+}
+
+/** Compatibility helper retained for callers that need a pre-agent checkpoint. */
+export async function snapshotDiagram(id: string): Promise<string | null> {
+  const point = await createRecoveryPoint(id, 'agent');
+  return point ? join(historyDir(id), point.file) : null;
+}
+
+export async function createRecoveryPoint(
+  id: string,
+  origin: RevisionOrigin,
+  opts: { turnId?: string; outcome?: AgentTurnStatus } = {},
+): Promise<RecoveryPoint | null> {
+  const state = await getDiagramState(id);
+  if (!state || state.source.trim() === '') return null;
+  try {
+    const point = await writeRecoveryPointFile(id, state.source, state.revision, origin, opts.turnId, opts.outcome);
+    await clearHistoryDegraded(id);
+    return point;
+  } catch (error) {
+    await markHistoryDegraded(id);
+    throw error;
+  }
+}
+
+export async function restoreRecoveryPoint(id: string, pointId: string): Promise<SaveResult> {
+  const point = await readRecoveryPoint(id, pointId);
+  if (!point) throw new Error('Recovery point is missing or damaged');
+  const state = await getDiagramState(id);
+  if (!state) throw new Error('Diagram durability state is unavailable');
+  await writeRecoveryPointFile(id, state.source, state.revision, 'restore');
+  const result = await writeDiagram(id, point.source, { expectedRevision: state.revision, origin: 'restore' });
+  await writeRecoveryPointFile(id, point.source, result.revision, 'restore');
+  return result;
+}
+
+export async function listConversations(sessionId: string): Promise<ConversationRecord[]> {
+  await ensureSessionState(sessionId);
+  try {
+    const entries = await readdir(conversationsDir(sessionId), { withFileTypes: true });
+    const records: ConversationRecord[] = [];
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
+      const record = await readJson<ConversationRecord>(join(conversationsDir(sessionId), entry.name));
+      if (record) records.push(record);
+    }
+    return records.sort((a, b) => b.updatedAt - a.updatedAt);
+  } catch {
+    return [];
+  }
+}
+
+export async function readConversation(sessionId: string, conversationId: string): Promise<ConversationRecord | null> {
+  return readJson<ConversationRecord>(conversationPath(sessionId, conversationId));
+}
+
+async function setConversationArchived(sessionId: string, conversationId: string, archived: boolean): Promise<ConversationRecord | null> {
+  return withSessionLock(sessionId, async () => {
+    const current = await readConversation(sessionId, conversationId);
+    if (!current) return null;
+    const meta = await readMeta(sessionId);
+    if (archived && meta?.agentLease?.conversationId === conversationId) throw new AgentLeaseError(meta.agentLease);
+    const next: ConversationRecord = { ...current, archived, updatedAt: Date.now() };
+    await writeConversation(sessionId, next);
+    return next;
+  });
+}
+
+export function archiveConversation(sessionId: string, conversationId: string): Promise<ConversationRecord | null> {
+  return setConversationArchived(sessionId, conversationId, true);
+}
+
+export function restoreConversation(sessionId: string, conversationId: string): Promise<ConversationRecord | null> {
+  return setConversationArchived(sessionId, conversationId, false);
+}
+
+export async function createConversation(
+  sessionId: string,
+  opts: { title?: string; provider?: string } = {},
+): Promise<ConversationRecord> {
+  return withSessionLock(sessionId, async () => {
+    const state = await getDiagramState(sessionId);
+    if (!state) throw new Error('No such session');
+    const now = Date.now();
+    const record: ConversationRecord = {
+      id: randomUUID(),
+      title: opts.title?.trim() || 'New conversation',
+      provider: opts.provider ?? 'codex',
+      createdAt: now,
+      updatedAt: now,
+      status: 'ready',
+      startingRevision: state.revision,
+      lastRevision: state.revision,
+      messages: [],
+    };
+    await mkdir(conversationsDir(sessionId), { recursive: true });
+    await writeAtomic(conversationPath(sessionId, record.id), JSON.stringify(record, null, 2));
+    const meta = await readMeta(sessionId);
+    if (meta) await writeMeta({ ...meta, selectedConversationId: record.id });
+    return record;
+  });
+}
+
+async function writeConversation(sessionId: string, record: ConversationRecord): Promise<void> {
+  await mkdir(conversationsDir(sessionId), { recursive: true });
+  await writeAtomic(conversationPath(sessionId, record.id), JSON.stringify(record, null, 2));
+}
+
+export async function updateConversation(
+  sessionId: string,
+  conversationId: string,
+  patch: Partial<ConversationRecord>,
+): Promise<ConversationRecord | null> {
+  return withSessionLock(sessionId, async () => {
+    const current = await readConversation(sessionId, conversationId);
+    if (!current) return null;
+    const next: ConversationRecord = { ...current, ...patch, id: current.id, updatedAt: Date.now() };
+    await writeConversation(sessionId, next);
+    return next;
+  });
+}
+
+export async function beginAgentTurn(
+  sessionId: string,
+  conversationId: string,
+  opts: { prompt: string; provider: string; providerThreadId?: string; model?: string; effort?: string },
+): Promise<AgentTurnRecord> {
+  return withSessionLock(sessionId, async () => {
+    const meta = await ensureSessionState(sessionId);
+    const state = await getDiagramState(sessionId);
+    const conversation = await readConversation(sessionId, conversationId);
+    if (!meta || !state || !conversation) throw new Error('Conversation or Diagram does not exist');
+    if (meta.agentLease) throw new AgentLeaseError(meta.agentLease);
+    const pre = await createRecoveryPoint(sessionId, 'agent');
+    if (!pre) throw new Error('Could not create the pre-agent recovery point');
+    const now = Date.now();
+    const turn: AgentTurnRecord = {
+      id: randomUUID(),
+      conversationId,
+      provider: opts.provider,
+      providerThreadId: opts.providerThreadId,
+      model: opts.model,
+      effort: opts.effort,
+      prompt: opts.prompt,
+      status: 'running',
+      startedAt: now,
+      startingRevision: state.revision,
+      preRecoveryPointId: pre.id,
+      trace: [],
+    };
+    await writeAtomic(turnPath(sessionId), JSON.stringify(turn, null, 2));
+    await writeConversation(sessionId, {
+      ...conversation,
+      provider: opts.provider,
+      providerThreadId: opts.providerThreadId ?? conversation.providerThreadId,
+      status: 'running',
+      updatedAt: now,
+      messages: [...conversation.messages, { id: randomUUID(), role: 'user', text: opts.prompt, createdAt: now }],
+    });
+    await writeMeta({ ...meta, agentLease: { turnId: turn.id, conversationId, startedAt: now }, lastActivityAt: now, updatedAt: now });
+    return turn;
+  });
+}
+
+export async function readAgentTurn(sessionId: string): Promise<AgentTurnRecord | null> {
+  return readJson<AgentTurnRecord>(turnPath(sessionId));
+}
+
+export async function appendTurnTrace(sessionId: string, line: string): Promise<void> {
+  return withSessionLock(sessionId, async () => {
+    const turn = await readAgentTurn(sessionId);
+    if (!turn || turn.status !== 'running') return;
+    await writeAtomic(turnPath(sessionId), JSON.stringify({ ...turn, trace: [...turn.trace, line].slice(-500) }, null, 2));
+  });
+}
+
+export async function finishAgentTurn(
+  sessionId: string,
+  status: Exclude<AgentTurnStatus, 'running'>,
+  opts: { finalResponse?: string; error?: string } = {},
+): Promise<AgentTurnRecord | null> {
+  return withSessionLock(sessionId, async () => {
+    const turn = await readAgentTurn(sessionId);
+    if (!turn) return null;
+    await reconcileDiagramUnlocked(sessionId, 'agent', turn.id);
+    const state = await getDiagramState(sessionId);
+    if (!state) throw new Error('Diagram durability state is unavailable');
+    const post = await createRecoveryPoint(sessionId, 'agent', { turnId: turn.id, outcome: status });
+    const endedAt = Date.now();
+    const finished: AgentTurnRecord = {
+      ...turn,
+      status,
+      endedAt,
+      endingRevision: state.revision,
+      postRecoveryPointId: post?.id,
+      finalResponse: opts.finalResponse,
+      error: opts.error,
+    };
+    await writeAtomic(turnPath(sessionId), JSON.stringify(finished, null, 2));
+    const conversation = await readConversation(sessionId, turn.conversationId);
+    if (conversation) {
+      await writeConversation(sessionId, {
+        ...conversation,
+        status: status === 'completed' ? 'ready' : status,
+        updatedAt: endedAt,
+        lastRevision: state.revision,
+        messages: opts.finalResponse || opts.error || status !== 'completed'
+          ? [
+              ...conversation.messages,
+              {
+                id: randomUUID(),
+                role: 'agent',
+                text: opts.finalResponse || `Turn ${status}${opts.error ? `: ${opts.error}` : '.'}`,
+                createdAt: endedAt,
+                trace: turn.trace.length > 0 ? turn.trace : undefined,
+                error: status !== 'completed',
+              },
+            ]
+          : conversation.messages,
+      });
+    }
+    const meta = await readMeta(sessionId);
+    if (meta) await writeMeta({ ...meta, agentLease: undefined, lastActivityAt: endedAt, updatedAt: endedAt });
+    return finished;
+  });
+}
+
+/** Convert persisted running turns into explicit interrupted outcomes on boot. */
+export async function recoverInterruptedTurns(): Promise<void> {
+  await mkdir(SESSIONS_DIR, { recursive: true });
+  const entries = await readdir(SESSIONS_DIR, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const turn = await readAgentTurn(entry.name);
+    if (!turn || turn.status !== 'running') continue;
+    try {
+      await finishAgentTurn(entry.name, 'interrupted', { error: 'MDVE restarted while this Conversation turn was running' });
+    } catch {
+      const meta = await readMeta(entry.name);
+      if (meta) await writeMeta({ ...meta, agentLease: undefined, historyDegraded: true, updatedAt: Date.now() }).catch(() => undefined);
+    }
+  }
+}
+
+export async function archiveSession(id: string): Promise<SessionMeta | null> {
+  return withSessionLock(id, async () => {
+    const meta = await ensureSessionState(id);
+    if (!meta) return null;
+    if (meta.agentLease) throw new AgentLeaseError(meta.agentLease);
+    await createRecoveryPoint(id, 'manual');
+    const next = normalizeMeta({ ...meta, archived: true, updatedAt: Date.now(), lastActivityAt: meta.lastActivityAt });
+    await writeMeta(next);
+    return next;
+  });
+}
+
+export async function restoreSession(id: string): Promise<SessionMeta | null> {
+  return updateMeta(id, { archived: false, trashed: false });
 }
 
 export async function ensureRoot(): Promise<void> {
   await mkdir(SESSIONS_DIR, { recursive: true });
+  await recoverInterruptedTurns();
 }
 
 /** Most recent session, creating one when the store is empty. */
 export async function latestOrCreate(): Promise<SessionMeta> {
-  const sessions = await listSessions();
+  const sessions = await listSessions('active');
   if (sessions.length > 0) return sessions[0];
   return createSession();
 }

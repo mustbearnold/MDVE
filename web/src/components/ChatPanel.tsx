@@ -9,6 +9,8 @@ export function ChatPanel(): JSX.Element {
   const chat = useStore((s) => s.chat);
   const busy = useStore((s) => s.busy);
   const session = useStore((s) => s.session);
+  const conversations = useStore((s) => s.conversations);
+  const conversationId = useStore((s) => s.conversationId);
   const providers = useStore((s) => s.providers);
   const providerId = useStore((s) => s.providerId);
   const model = useStore((s) => s.model);
@@ -16,12 +18,18 @@ export function ChatPanel(): JSX.Element {
   const setProvider = useStore((s) => s.setProvider);
   const setModel = useStore((s) => s.setModel);
   const setEffort = useStore((s) => s.setEffort);
+  const selectConversation = useStore((s) => s.selectConversation);
+  const newConversation = useStore((s) => s.newConversation);
+  const archiveConversation = useStore((s) => s.archiveConversation);
+  const restoreConversation = useStore((s) => s.restoreConversation);
+  const loadConversations = useStore((s) => s.loadConversations);
 
   const [input, setInput] = useState('');
   const [showTrace, setShowTrace] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const provider = providers.find((p) => p.id === providerId);
   const modelInfo = provider?.models.find((m) => m.id === model);
+  const conversation = conversations.find((candidate) => candidate.id === conversationId);
 
   useEffect(() => {
     const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
@@ -31,7 +39,13 @@ export function ChatPanel(): JSX.Element {
   const submit = async () => {
     const prompt = input.trim();
     const state = useStore.getState();
-    if (!prompt || state.busy || !session) return;
+    if (!prompt || state.busy || !session || session.archived || state.conversations.find((item) => item.id === state.conversationId)?.archived) return;
+
+    if (!state.conversationId) {
+      await newConversation();
+    }
+    const activeConversationId = useStore.getState().conversationId;
+    if (!activeConversationId) return;
 
     setInput('');
     state.appendChat({ id: `u${++turnSeq}`, role: 'user', text: prompt });
@@ -42,10 +56,13 @@ export function ChatPanel(): JSX.Element {
     try {
       await streamChat(
         session.id,
-        { prompt, providerId, model: model || undefined, effort: effort || undefined },
+        { prompt, providerId, model: model || undefined, effort: effort || undefined, conversationId: activeConversationId },
         {
           onAgent: (event) => useStore.getState().applyAgentEvent(turnId, event),
-          onDiagram: (source) => useStore.getState().setSource(source, { persist: false }),
+          onDiagram: (source, state) => {
+            useStore.getState().setSource(source, { persist: false });
+            if (state?.revision !== undefined) useStore.getState().setRevision(state.revision);
+          },
         },
       );
     } catch (err) {
@@ -56,6 +73,7 @@ export function ChatPanel(): JSX.Element {
     } finally {
       useStore.getState().patchChat(turnId, { pending: false });
       useStore.getState().setBusy(false);
+      void loadConversations();
     }
   };
 
@@ -68,6 +86,35 @@ export function ChatPanel(): JSX.Element {
             {provider?.status.ok ? 'Ready' : 'Unavailable'}
           </span>
         </div>
+        <div className="chat-conversation">
+          <label htmlFor="conversation-select">Conversation</label>
+          <select
+            id="conversation-select"
+            value={conversationId ?? ''}
+            onChange={(event) => void selectConversation(event.target.value)}
+            disabled={busy || conversations.length === 0}
+          >
+            {conversations.length === 0 && <option value="">No conversation yet</option>}
+            {conversations.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.title}{item.archived ? ' (archived)' : ''} · {item.status}
+              </option>
+            ))}
+          </select>
+          <button type="button" onClick={() => void newConversation()} disabled={busy || Boolean(session?.archived)}>
+            New conversation
+          </button>
+          {conversation?.archived ? (
+            <button type="button" onClick={() => void restoreConversation()} disabled={busy}>
+              Restore conversation
+            </button>
+          ) : (
+            <button type="button" onClick={() => void archiveConversation()} disabled={busy || !conversation}>
+              Archive conversation
+            </button>
+          )}
+        </div>
+        {conversation && <p className="chat-conversation-status">{conversation.status} · Diagram revision {conversation.lastRevision}</p>}
         <div className="chat-provider">
           <label>
             <span className="sr-only">Provider</span>
@@ -157,6 +204,7 @@ export function ChatPanel(): JSX.Element {
             }
           }}
           rows={3}
+          disabled={busy || Boolean(session?.archived) || Boolean(conversation?.archived)}
         />
         <div className="chat-actions">
           <label className="trace-toggle">

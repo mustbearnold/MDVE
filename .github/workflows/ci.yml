@@ -55,6 +55,9 @@ jobs:
       - name: Build production assets
         run: npm run build
 
+      - name: Verify npm artifact allowlist and bundle budget
+        run: npm run verify:artifact
+
   security:
     name: Production dependency audit
     runs-on: ubuntu-latest
@@ -77,6 +80,9 @@ jobs:
 
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
+
+      - name: Verify production license metadata
+        run: npm run verify:licenses
 
   dependency-review:
     name: Dependency review

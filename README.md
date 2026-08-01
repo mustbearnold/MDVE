@@ -1,112 +1,114 @@
 # MDVE — Mermaid Diagram Visual Editor
 
 [![CI](https://github.com/mustbearnold/MDVE/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/mustbearnold/MDVE/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/mustbearnold/MDVE/actions/workflows/codeql.yml/badge.svg?branch=master)](https://github.com/mustbearnold/MDVE/actions/workflows/codeql.yml)
 
-A local Linux app for editing Mermaid diagrams three ways at once: as text, by
-clicking the rendered diagram, and by asking an LLM agent that reads and edits
-the diagram itself.
+MDVE is a local Linux workbench for Mermaid diagrams. Edit the source, inspect
+the rendered graph, make safe structured flowchart changes, and ask Codex to
+transform the same durable diagram.
 
-The first agent backend is **Codex on your ChatGPT subscription** — MDVE shells
-out to the `codex` CLI you are already logged into, so no API key and no token
-handling.
+V1 is Codex-only and runs against the documented Codex app-server interface.
+MDVE does not read Codex credential files, model caches, or private config; the
+installed `codex` runtime owns authentication and model entitlements.
 
-## Quick start
+## Install
 
-```bash
-npm install && npm run dev
-```
-
-Then open http://localhost:5173. In production mode the server also serves the
-built UI on a single port:
+V1 targets Node 22.11+ or Node 24.11+ on Linux and requires a supported Codex
+CLI (`>=0.146.0 <0.147.0`) already installed and authenticated:
 
 ```bash
-npm run build && npm start
+codex login
+npm install --global mdve@1.0.0
+mdve
 ```
 
-Requirements: Node 22 or 24 LTS, and `codex` on your `PATH`, logged in
-(`codex login`).
+The launcher binds to `127.0.0.1`, creates a one-use bootstrap URL, and opens
+the local workbench. For a terminal-only launch or a remote-control workflow:
 
-## Layout
-
-| Pane | What it does |
-| --- | --- |
-| Source (left) | CodeMirror editor over the raw `.mmd` text |
-| Preview (centre) | Live Mermaid render; click a node or link to select it, scroll to zoom, drag to pan |
-| Inspector (top right) | Edit the selected node's label, id, shape; link it to another node; edit or delete links |
-| Chat (bottom right) | Agent that reads and edits the diagram |
-
-Toolbar: new/open/rename diagram, add node, layout direction, undo/redo, import
-`.mmd`, export `.mmd` / SVG / PNG.
-
-## How the agent edits the diagram
-
-Every Diagram has a workspace directory under `~/.mdve/sessions/<uuid>/`:
-
-```
-diagram.mmd    the diagram — the single source of truth
-AGENTS.md      instructions telling the agent what this workspace is
-session.json   title, timestamps, Codex thread id
+```bash
+mdve --no-open
+mdve version
+mdve doctor --json
 ```
 
-The server runs `codex exec --json -C <session dir> -s workspace-write`, so the
-agent uses its own native file tools to read and rewrite `diagram.mmd`. There is
-no bespoke tool protocol to keep in sync. The server watches the file with
-chokidar and pushes changes to the browser over SSE, so agent edits appear in
-the editor as they land.
+Package install, update, rollback, and uninstall never delete or rewrite
+`~/.mdve`. Diagram source, revisions, recovery points, Conversations, and
+provider continuity remain in that directory.
 
-Follow-up turns use `codex exec resume <thread id>`, so the agent keeps the
-conversation context across messages. The thread id is stored in
-`session.json`.
+For repository development:
 
-### Models
+```bash
+npm ci
+npm run dev
+```
 
-The model dropdown is read from `~/.codex/models_cache.json`, which Codex
-refreshes from your account's entitlements — so it lists exactly the models your
-subscription can use, and never goes stale. Models Codex marks as hidden are
-filtered out and deprecated ones are labelled. The second dropdown is the
-reasoning effort the selected model supports.
+The development server is at `http://127.0.0.1:8787`; Vite serves the UI and
+proxies API requests to the server. The production-equivalent local build is:
 
-MDVE defaults to the `model` and `model_reasoning_effort` in your
-`~/.codex/config.toml` and passes both explicitly on every run (`-m` and
-`-c model_reasoning_effort=…`), since the rest of that config is skipped.
+```bash
+npm run build
+npm start
+```
 
-## Visual editing model
+## The workbench
 
-The Mermaid text is always the source of truth — there is no separate diagram
-model that can drift from it. `web/src/mermaid/parse.ts` parses each line into
-either a statement (a chain of node tokens joined by links) or an opaque raw
-line. Visual edits in `mutate.ts` rewrite only the lines they touch, so
-comments, `classDef`s, subgraphs and any syntax the parser does not model are
-preserved byte for byte.
+- Source is CodeMirror over the canonical Mermaid text.
+- Preview renders the same text; nodes and links can be selected, zoomed, and panned.
+- Inspector provides byte-preserving structured edits for `flowchart` and `graph` diagrams.
+- Agent runs Codex in the Diagram workspace and streams progress into a durable Conversation.
+- History lists immutable, checksummed recovery points and restores a point as a new revision.
 
-Structured editing covers `flowchart` / `graph` diagrams. Other diagram types
-still render and can be edited as text or through the agent; the inspector says
-so rather than pretending.
+Other Mermaid grammars remain renderable and source-editable, but structured
+visual mutation is intentionally unavailable when MDVE cannot prove that it is
+safe. Mermaid remains the source of truth; there is no second canvas model.
+
+## Durability and continuity
+
+Each Diagram lives under `~/.mdve/sessions/<id>/`:
+
+```text
+diagram.mmd                 canonical source
+revision.json               monotonic revision and checksum
+history/                    immutable recovery files and manifest
+conversations/              durable transcripts and provider binding
+turn.json                   persisted agent lifecycle and trace
+AGENTS.md                   workspace instructions for Codex
+session.json                Diagram identity, activity, and lifecycle state
+```
+
+An acknowledged `Saved` revision is written through an atomic replacement and
+parent-directory sync. Unacknowledged browser edits are journaled as a recovery
+draft. Stale saves receive a conflict instead of silently overwriting newer
+source. Agent turns hold an exclusive write lease; stopping, failure, or a
+restart becomes an explicit persisted outcome.
+
+Diagrams have one source/history timeline and multiple Conversations. A new
+Conversation starts from the current acknowledged revision without erasing an
+older transcript. Restoring a Diagram never rewinds a Conversation. Archive is
+reversible and does not delete source, history, or Conversations.
 
 ## Configuration
 
-| Env var | Default | Meaning |
+| Variable | Default | Meaning |
 | --- | --- | --- |
-| `PORT` | `8787` | Backend port |
-| `HOST` | `127.0.0.1` | Backend bind address |
-| `MDVE_HOME` | `~/.mdve` | Where sessions are stored |
-| `MDVE_CODEX_BIN` | `codex` | Path to the Codex CLI |
-| `MDVE_CODEX_USER_CONFIG` | unset | Set to `1` to load your `~/.codex/config.toml` (MCP servers, hooks, custom model settings). Off by default because it makes every turn slower |
-| `MDVE_SERVER` | `http://127.0.0.1:8787` | Backend the Vite dev proxy targets |
+| `MDVE_HOME` | `~/.mdve` | Durable Diagram data directory |
+| `MDVE_PORT` | `8787` | Loopback server port |
+| `MDVE_HOST` | `127.0.0.1` | Bind address; the launcher keeps this loopback-only |
+| `MDVE_CODEX_BIN` | `codex` | Codex executable to run |
+| `MDVE_WEB_DIST` | packaged `dist/web` | Production UI directory |
 
-## Adding another provider
+The development-only `PORT` and `HOST` aliases are also accepted by the server.
 
-`server/src/providers/types.ts` defines the whole contract: `status()`,
-`catalog()`, and `run(opts, emit)` streaming `AgentEvent`s. Implement it, register
-it in `server/src/index.ts`, and it appears in the chat provider dropdown. An
-API-key provider (Anthropic or OpenAI) is the natural second one; it would need
-its own `get_diagram` / `set_diagram` tools instead of the workspace-file trick,
-since it has no shell.
+## Release status
 
-## Known limits
+The repository contains the V1 candidate packaging, release gates, and local
+verification harness. Public publication remains gated on the documented
+GitHub-hosted CI evidence, dependency/license review, qualified legal approval,
+and the full browser/accessibility/performance matrix for one immutable
+candidate. No public registry publication is implied by this repository state.
 
-- Codex turns carry your `~/.codex` skills and plugins into context (~60k input
-  tokens per turn, mostly cached). Trimming those speeds MDVE up.
-- Node positions are Mermaid's automatic layout; there is no free-form dragging.
-- Subgraph membership is preserved but not editable from the inspector yet.
+## Scope
+
+MDVE V1 is a local Linux application for individual technical users who already
+use Mermaid and Codex. Hosted sync, accounts, real-time collaboration, a
+free-form canvas, mobile editing, and additional agent providers are outside
+the first release.

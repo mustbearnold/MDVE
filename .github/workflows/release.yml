@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  NPM_VERSION: "11.18.0"
+
+jobs:
+  publish:
+    name: Verify and publish the tagged candidate
+    runs-on: ubuntu-latest
+    environment: npm-release
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47fe5020 # v7.0.0
+        with:
+          node-version: "22.11.0"
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      - name: Install and verify pinned npm
+        run: bash .github/scripts/install-pinned-npm.sh
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run release gates available in CI
+        run: |
+          npm test
+          npm run typecheck
+          npm run build
+          npm run verify:licenses
+
+      - name: Build and inspect exact npm candidate
+        run: |
+          mkdir -p release
+          npm pack --pack-destination release --json
+          npm run verify:artifact -- release/mdve-${npm_package_version}.tgz
+
+      - name: Publish through npm trusted publishing
+        run: npm publish release/mdve-${npm_package_version}.tgz --access public --provenance

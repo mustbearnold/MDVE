@@ -3,6 +3,15 @@ export interface SessionMeta {
   title: string;
   createdAt: number;
   updatedAt: number;
+  lastActivityAt?: number;
+  schemaVersion?: number;
+  revision?: number;
+  checksum?: string;
+  archived?: boolean;
+  trashed?: boolean;
+  historyDegraded?: boolean;
+  selectedConversationId?: string;
+  agentLease?: { turnId: string; conversationId: string; startedAt: number };
   threadId?: string;
   provider?: string;
   model?: string;
@@ -38,14 +47,43 @@ export type AgentEvent =
 
 const json = { 'Content-Type': 'application/json' };
 
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly payload?: unknown,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init);
-  if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
-  return (await res.json()) as T;
+  const body = await res.text();
+  if (!res.ok) {
+    let payload: unknown;
+    try {
+      payload = JSON.parse(body);
+    } catch {
+      payload = undefined;
+    }
+    const detail = payload && typeof payload === 'object' && 'error' in payload && typeof payload.error === 'string' ? payload.error : body;
+    throw new ApiError(`${res.status} ${detail}`, res.status, payload);
+  }
+  return JSON.parse(body) as T;
 }
 
 export const api = {
-  listSessions: () => req<{ sessions: SessionMeta[] }>('/api/sessions'),
+  listSessions: (scope: 'active' | 'archived' | 'all' = 'all', search = '') => {
+    const params = new URLSearchParams();
+    if (scope !== 'all') params.set('scope', scope);
+    if (search) params.set('search', search);
+    const query = params.toString();
+    return req<{ sessions: SessionMeta[] }>(`/api/sessions${query ? `?${query}` : ''}`);
+  },
+
+  startup: () => req<{ session: SessionMeta }>('/api/startup'),
 
   createSession: (title?: string) =>
     req<{ session: SessionMeta }>('/api/sessions', {
@@ -55,7 +93,7 @@ export const api = {
     }),
 
   getSession: (id: string) =>
-    req<{ session: SessionMeta; source: string; workspace: string }>(`/api/sessions/${id}`),
+    req<{ session: SessionMeta; source: string; revision: number; checksum: string; workspace: string }>(`/api/sessions/${id}`),
 
   renameSession: (id: string, title: string) =>
     req<{ session: SessionMeta }>(`/api/sessions/${id}`, {
@@ -64,12 +102,48 @@ export const api = {
       body: JSON.stringify({ title }),
     }),
 
-  saveDiagram: (id: string, source: string) =>
-    req<{ ok: true }>(`/api/sessions/${id}/diagram`, {
+  selectConversation: (id: string, conversationId: string) =>
+    req<{ session: SessionMeta }>(`/api/sessions/${id}`, {
+      method: 'PATCH',
+      headers: json,
+      body: JSON.stringify({ selectedConversationId: conversationId }),
+    }),
+
+  saveDiagram: (id: string, source: string, expectedRevision?: number, origin: 'manual' | 'import' = 'manual') =>
+    req<{ ok: true; revision: number; checksum: string; historyAvailable: boolean }>(`/api/sessions/${id}/diagram`, {
       method: 'PUT',
       headers: json,
-      body: JSON.stringify({ source }),
+      body: JSON.stringify({ source, expectedRevision, origin }),
     }),
+
+  history: (id: string) => req<{ history: RecoveryPoint[] }>(`/api/sessions/${id}/history`),
+
+  restoreHistory: (id: string, pointId: string) =>
+    req<{ ok: true; revision: number; checksum: string }>(`/api/sessions/${id}/history/${pointId}/restore`, { method: 'POST' }),
+
+  historyPoint: (id: string, pointId: string) =>
+    req<{ point: RecoveryPoint; source: string }>(`/api/sessions/${id}/history/${pointId}`),
+
+  conversations: (id: string) => req<{ conversations: ConversationRecord[] }>(`/api/sessions/${id}/conversations`),
+
+  createConversation: (id: string, title?: string, provider = 'codex') =>
+    req<{ conversation: ConversationRecord }>(`/api/sessions/${id}/conversations`, {
+      method: 'POST',
+      headers: json,
+      body: JSON.stringify({ title, provider }),
+    }),
+
+  archiveConversation: (id: string, conversationId: string) =>
+    req<{ conversation: ConversationRecord }>(`/api/sessions/${id}/conversations/${conversationId}/archive`, { method: 'POST' }),
+
+  restoreConversation: (id: string, conversationId: string) =>
+    req<{ conversation: ConversationRecord }>(`/api/sessions/${id}/conversations/${conversationId}/restore`, { method: 'POST' }),
+
+  archiveSession: (id: string) =>
+    req<{ session: SessionMeta }>(`/api/sessions/${id}/archive`, { method: 'POST' }),
+
+  restoreSession: (id: string) =>
+    req<{ session: SessionMeta }>(`/api/sessions/${id}/restore`, { method: 'POST' }),
 
   providers: () => req<{ providers: ProviderInfo[] }>('/api/providers'),
 
@@ -110,8 +184,8 @@ async function* sse(body: ReadableStream<Uint8Array>): AsyncGenerator<{ event: s
 
 export async function streamChat(
   sessionId: string,
-  body: { prompt: string; providerId: string; model?: string; effort?: string; newThread?: boolean },
-  handlers: { onAgent: (e: AgentEvent) => void; onDiagram: (source: string) => void },
+  body: { prompt: string; providerId: string; model?: string; effort?: string; newThread?: boolean; conversationId?: string },
+  handlers: { onAgent: (e: AgentEvent) => void; onDiagram: (source: string, state?: { revision?: number; checksum?: string }) => void },
   signal?: AbortSignal,
 ): Promise<void> {
   const res = await fetch(`/api/sessions/${sessionId}/chat`, {
@@ -124,8 +198,45 @@ export async function streamChat(
 
   for await (const { event, data } of sse(res.body)) {
     if (event === 'agent') handlers.onAgent(data as AgentEvent);
-    else if (event === 'diagram') handlers.onDiagram((data as { source: string }).source);
+    else if (event === 'diagram') {
+      const diagram = data as { source: string; revision?: number; checksum?: string };
+      handlers.onDiagram(diagram.source, diagram);
+    }
   }
+}
+
+export interface RecoveryPoint {
+  id: string;
+  revision: number;
+  checksum: string;
+  createdAt: number;
+  origin: 'manual' | 'import' | 'agent' | 'restore' | 'system';
+  file: string;
+  turnId?: string;
+  outcome?: 'running' | 'completed' | 'stopped' | 'failed' | 'interrupted';
+}
+
+export interface ConversationMessage {
+  id: string;
+  role: 'user' | 'agent' | 'system';
+  text: string;
+  createdAt: number;
+  trace?: string[];
+  error?: boolean;
+}
+
+export interface ConversationRecord {
+  id: string;
+  title: string;
+  provider: string;
+  providerThreadId?: string;
+  createdAt: number;
+  updatedAt: number;
+  archived?: boolean;
+  status: 'ready' | 'running' | 'stopped' | 'failed' | 'interrupted' | 'cannot-resume';
+  startingRevision: number;
+  lastRevision: number;
+  messages: ConversationMessage[];
 }
 
 /** Live diagram changes made outside the editor (agent edits, external tools). */

@@ -1,17 +1,24 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import mermaid from 'mermaid';
 
 import { reservedIdsIn, type Diagram } from '../mermaid/parse';
 import { useStore, type Selection } from '../state/store';
 import { Icon } from './Icon';
 
-mermaid.initialize({
-  startOnLoad: false,
-  securityLevel: 'loose',
-  theme: 'dark',
-  suppressErrorRendering: true,
-  flowchart: { htmlLabels: true, curve: 'basis' },
-});
+let mermaidPromise: Promise<typeof import('mermaid').default> | undefined;
+
+function loadMermaid(): Promise<typeof import('mermaid').default> {
+  mermaidPromise ??= import('mermaid').then(({ default: instance }) => {
+    instance.initialize({
+      startOnLoad: false,
+      securityLevel: 'loose',
+      theme: 'dark',
+      suppressErrorRendering: true,
+      flowchart: { htmlLabels: true, curve: 'basis' },
+    });
+    return instance;
+  });
+  return mermaidPromise;
+}
 
 let renderSeq = 0;
 
@@ -123,6 +130,7 @@ export function Preview(): JSX.Element {
         return;
       }
       try {
+        const mermaid = await loadMermaid();
         const { svg } = await mermaid.render(id, source);
         if (cancelled || !hostRef.current) return;
         hostRef.current.innerHTML = svg;
