@@ -303,10 +303,11 @@ try {
       // and measure only until every dense node has been rendered.
       const denseStarted = performance.now();
       await waitForDenseDiagram(page);
+      const denseOpenMs = performance.now() - denseStarted;
       const denseMetrics = await readVitals(page);
       denseColdOpenings.push({
         index,
-        openMs: performance.now() - denseStarted,
+        openMs: denseOpenMs,
         lcpMs: denseMetrics.lcp,
         cls: denseMetrics.cls,
         tbtMs: denseMetrics.tbt,
@@ -353,10 +354,11 @@ try {
     // and measure only until every dense node has been rendered.
     const denseStarted = performance.now();
     await waitForDenseDiagram(page);
+    const denseOpenMs = performance.now() - denseStarted;
     const denseMetrics = await readVitals(page);
     denseWarmOpenings.push({
       index,
-      openMs: performance.now() - denseStarted,
+      openMs: denseOpenMs,
       lcpMs: denseMetrics.lcp,
       cls: denseMetrics.cls,
       tbtMs: denseMetrics.tbt,
