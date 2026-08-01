@@ -81,6 +81,14 @@ async function measureEditToPreview(page) {
   return page.evaluate(() => window.__mdveEditPreview.end - window.__mdveEditPreview.start);
 }
 
+async function readVitals(page) {
+  return page.evaluate(() => {
+    const lcp = performance.getEntriesByType('largest-contentful-paint').at(-1);
+    if (lcp) window.__mdvePerformance.lcp = lcp.startTime;
+    return { ...window.__mdvePerformance };
+  });
+}
+
 function flowchartFixture(index) {
   // This is the representative editing fixture: 100 nodes with a small
   // connected spine. Dense 200-node/300-edge opening remains a separate gate.
@@ -237,7 +245,7 @@ try {
       await page.goto(cold.bootstrapUrl);
       await page.getByRole('heading', { name: 'Preview' }).waitFor();
       await page.getByText('Saved · revision 1').waitFor();
-      const metrics = await page.evaluate(() => ({ ...window.__mdvePerformance }));
+      const metrics = await readVitals(page);
       coldLaunches.push({
         index,
         cliToReadyMs: cold.cliToReadyMs,
@@ -295,7 +303,7 @@ try {
     await page.getByText('Saved · revision 1').waitFor();
     const switchMs = performance.now() - switchStarted;
 
-    const metrics = await page.evaluate(() => ({ ...window.__mdvePerformance }));
+    const metrics = await readVitals(page);
     warmNavigations.push({ index, usableMs, editToPreviewMs, editToSavedMs, switchMs, lcpMs: metrics.lcp, cls: metrics.cls, tbtMs: metrics.tbt });
     console.log(`[performance] warm sample ${index + 1}/${sampleCount} complete usable=${usableMs.toFixed(1)}ms saved=${editToSavedMs.toFixed(1)}ms`);
     await context.close();
