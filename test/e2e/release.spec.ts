@@ -9,14 +9,23 @@ async function seedRecoveryDraft(page: Page, draft: { sessionId: string; source:
   await page.evaluate((value) => new Promise<void>((resolve, reject) => {
     const request = indexedDB.open('mdve-recovery', 1);
     request.onerror = () => reject(request.error ?? new Error('Could not open recovery database'));
+    request.onupgradeneeded = () => {
+      if (!request.result.objectStoreNames.contains('drafts')) request.result.createObjectStore('drafts', { keyPath: 'sessionId' });
+    };
     request.onsuccess = () => {
-      const transaction = request.result.transaction('drafts', 'readwrite');
-      transaction.objectStore('drafts').put({ ...value, updatedAt: Date.now() });
-      transaction.oncomplete = () => {
+      try {
+        const transaction = request.result.transaction('drafts', 'readwrite');
+        transaction.oncomplete = () => {
+          request.result.close();
+          resolve();
+        };
+        transaction.onerror = () => reject(transaction.error ?? new Error('Could not seed recovery draft'));
+        transaction.onabort = () => reject(transaction.error ?? new Error('Could not seed recovery draft'));
+        transaction.objectStore('drafts').put({ ...value, updatedAt: Date.now() });
+      } catch (error) {
         request.result.close();
-        resolve();
-      };
-      transaction.onerror = () => reject(transaction.error ?? new Error('Could not seed recovery draft'));
+        reject(error);
+      }
     };
   }), draft);
 }
@@ -216,16 +225,17 @@ test('browser-process restart preserves a recovery draft', async ({ page }, test
   const browser = page.context().browser();
   expect(browser).toBeTruthy();
   const browserType = browser!.browserType();
-  const profile = testInfo.outputPath('browser-restart-profile');
+  const profile = testInfo.outputPath('browser-restart-profile', `${process.pid}-${Date.now()}`);
   const contextOptions = { baseURL: 'http://127.0.0.1:4187', headless: true, viewport: { width: 800, height: 900 } };
   const draft = 'flowchart TD\n  process[Process restart] --> done[Done]\n';
   const firstContext = await browserType.launchPersistentContext(profile, contextOptions);
   try {
     const firstPage = firstContext.pages()[0] ?? await firstContext.newPage();
-    await firstPage.goto('/');
+    // Seed before the app opens its own recovery transaction. The readiness
+    // endpoint keeps the origin identical without racing startup IndexedDB
+    // work in this disposable browser profile.
+    await firstPage.goto('/_mdve/ready');
     await firstPage.evaluate((id) => localStorage.setItem('mdve.session', id), sessionId);
-    await firstPage.reload();
-    await waitForSaved(firstPage, 1);
     await seedRecoveryDraft(firstPage, { sessionId: sessionId!, source: draft, baseRevision: 0 });
   } finally {
     await firstContext.close();
