@@ -10,9 +10,9 @@ Which measurable product, reliability, accessibility, performance, and installat
 
 ## Evidence to use
 
-- Type checking and production build pass; `npm test` now covers the save reliability seam, but parser, API, agent-run, and browser regression coverage remain open.
+- The 2026-07-28 baseline passed type checking and a production build; parser, API, agent-run, and browser regression coverage were then open.
 - The production bundle warns about JavaScript chunks over 500 kB.
-- Live DOM inspection shows several icon-only controls expose symbols rather than descriptive accessible names.
+- The 2026-07-28 baseline's live DOM inspection showed several icon-only controls exposing symbols rather than descriptive accessible names; current candidate status is recorded in the release-gate research update.
 - Core risks include file durability, agent cancellation/recovery, parser fidelity, responsive use, and a reproducible install path.
 - The Codex-only contract requires compatibility gates for app-server schema and
   initialization, ChatGPT auth state, model discovery, new and resumed threads,
@@ -284,10 +284,10 @@ minified (301.08 kB gzip) and Vite reports chunks over 500 kB.
 `npm pack --dry-run --json` reports 160 entries and includes `.agents`, `.scratch`,
 GitHub workflow, TypeScript server source, and other development material; the
 package remains private, has no `bin`, omits the production UI, and starts through
-the development-only `tsx`. Several icon-only controls expose symbols rather than
-descriptive accessible names. GitHub Actions issue #6 and qualified legal approval
-also remain open. Passing today's three local commands is useful development
-evidence, not evidence for the contract above.
+the development-only `tsx`. The baseline also recorded icon-only controls exposing
+symbols rather than descriptive accessible names. GitHub Actions issue #6 and
+qualified legal approval also remain open. Passing that baseline's three local
+commands is useful development evidence, not evidence for the contract above.
 
 ### Options considered
 
