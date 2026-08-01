@@ -21,6 +21,14 @@ async function seedRecoveryDraft(page: Page, draft: { sessionId: string; source:
   }), draft);
 }
 
+async function waitForLibraryScope(page: Page, scope: string, sessionId: string): Promise<void> {
+  await expect.poll(async () => {
+    const response = await page.request.get(`/api/sessions?scope=${scope}`);
+    const body = (await response.json()) as { sessions: Array<{ id: string }> };
+    return body.sessions.some((session) => session.id === sessionId);
+  }, { timeout: 10_000 }).toBe(true);
+}
+
 test.beforeEach(async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 800, height: 900 });
   const response = await page.request.post('/api/sessions', {
@@ -62,32 +70,32 @@ test('the packaged browser workflow edits, saves, previews, exports, and restore
 });
 
 test('the diagram library exposes Recent, Archived, and recoverable Trash scopes', async ({ page }) => {
+  const originalId = await page.locator('#diagram-select').inputValue();
   const menu = page.locator('summary').filter({ hasText: 'Diagram' });
   await menu.click();
   await page.getByRole('button', { name: 'New diagram' }).click();
-  await waitForSaved(page, 1);
+  await expect.poll(() => page.locator('#diagram-select').inputValue()).not.toBe(originalId);
+  const newId = await page.locator('#diagram-select').inputValue();
 
   await menu.click();
   await page.getByRole('button', { name: 'Archive diagram' }).click();
-  await expect(page.locator('#diagram-select')).toHaveValue(/.+/);
+  await waitForLibraryScope(page, 'archived', newId);
 
   await page.getByLabel('Diagram library').selectOption('archived');
-  await expect(page.locator('#diagram-select option').filter({ hasText: 'Untitled diagram (archived)' })).toHaveCount(1);
-  const archivedId = await page.locator('#diagram-select option').filter({ hasText: 'Untitled diagram (archived)' }).getAttribute('value');
-  expect(archivedId).toBeTruthy();
-  await page.locator('#diagram-select').selectOption(archivedId!);
+  await expect(page.locator(`#diagram-select option[value="${newId}"]`)).toHaveCount(1);
+  await page.locator('#diagram-select').selectOption(newId);
   await menu.click();
   await expect(page.getByRole('button', { name: 'Restore diagram' })).toBeVisible();
   await page.getByRole('button', { name: 'Restore diagram' }).click();
+  await waitForLibraryScope(page, 'recent', newId);
 
   await menu.click();
   page.once('dialog', (dialog) => dialog.accept());
   await page.getByRole('button', { name: 'Move diagram to Trash' }).click();
+  await waitForLibraryScope(page, 'trash', newId);
   await page.getByLabel('Diagram library').selectOption('trash');
-  await expect(page.locator('#diagram-select option').filter({ hasText: 'Untitled diagram (Trash)' })).toHaveCount(1);
-  const trashedId = await page.locator('#diagram-select option').filter({ hasText: 'Untitled diagram (Trash)' }).getAttribute('value');
-  expect(trashedId).toBeTruthy();
-  await page.locator('#diagram-select').selectOption(trashedId!);
+  await expect(page.locator(`#diagram-select option[value="${newId}"]`)).toHaveCount(1);
+  await page.locator('#diagram-select').selectOption(newId);
   await menu.click();
   await expect(page.getByRole('button', { name: 'Delete diagram permanently' })).toBeVisible();
   await expect(page.locator('.cm-content')).toHaveAttribute('contenteditable', 'false');
