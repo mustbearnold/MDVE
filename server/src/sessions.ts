@@ -588,6 +588,10 @@ export async function writeDiagram(
       // Replacing the old source is therefore part of the failed-write path,
       // not an optional cleanup after a successful writeAtomic call.
       await writeAtomic(diagramPath(id), current).catch(() => undefined);
+      // The revision write can also have completed its rename before a later
+      // durability step failed. Restore the old revision record as well; an
+      // old source paired with the new checksum is not a recoverable state.
+      await writeAtomic(revisionPath(id), JSON.stringify(revision, null, 2)).catch(() => undefined);
       throw error;
     }
 

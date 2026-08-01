@@ -8,7 +8,7 @@ import { HistoryPanel } from './components/HistoryPanel';
 import { Preview } from './components/Preview';
 import { Toolbar } from './components/Toolbar';
 import { WorkbenchTabs, type WorkbenchView } from './components/WorkbenchTabs';
-import { useStore } from './state/store';
+import { flushDiagramBeforeNavigation, useStore } from './state/store';
 
 export function App(): JSX.Element {
   const session = useStore((s) => s.session);
@@ -28,6 +28,29 @@ export function App(): JSX.Element {
       useStore.getState().setSource(source, { persist: false });
     });
   }, [session?.id]);
+
+  // A browser cannot reliably finish an asynchronous save during shutdown,
+  // so the IndexedDB recovery draft remains the primary guarantee. Warn when
+  // the durable save is still in flight or draft journaling has degraded, and
+  // make the best-effort flush explicit for normal page-hide navigation.
+  useEffect(() => {
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      const state = useStore.getState();
+      if (state.saveStatus.state === 'saving' || state.draftStatus === 'degraded') {
+        event.preventDefault();
+        event.returnValue = '';
+      }
+    };
+    const onPageHide = () => {
+      void flushDiagramBeforeNavigation(useStore.getState().session);
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      window.removeEventListener('pagehide', onPageHide);
+    };
+  }, []);
 
   // Global undo/redo.
   useEffect(() => {

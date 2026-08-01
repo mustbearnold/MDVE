@@ -221,8 +221,10 @@ app.get('/api/meta', async (_req, res) => {
 
 app.post('/api/sessions', async (req, res) => {
   const { title, source } = req.body ?? {};
+  if (title !== undefined && typeof title !== 'string') return res.status(400).json({ error: 'title must be a string' });
+  if (source !== undefined && typeof source !== 'string') return res.status(400).json({ error: 'source must be a string' });
   const meta = await createSession({ title, source: source ?? DEFAULT_DIAGRAM });
-  res.json({ session: meta });
+  res.status(201).json({ session: meta });
 });
 
 app.get('/api/sessions/:id', async (req, res) => {
@@ -307,6 +309,9 @@ app.post('/api/sessions/:id/restore', async (req, res) => {
 
 app.patch('/api/sessions/:id', async (req, res) => {
   const patch: { title?: string; selectedConversationId?: string } = {};
+  if (req.body?.title !== undefined && typeof req.body.title !== 'string') {
+    return res.status(400).json({ error: 'title must be a string' });
+  }
   if (typeof req.body?.title === 'string') patch.title = req.body.title;
   if (typeof req.body?.selectedConversationId === 'string') {
     if (!(await readConversation(req.params.id, req.body.selectedConversationId))) {

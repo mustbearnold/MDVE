@@ -114,11 +114,15 @@ export function ChatPanel(): JSX.Element {
             </button>
           )}
         </div>
-        {conversation && <p className="chat-conversation-status">{conversation.status} · Diagram revision {conversation.lastRevision}</p>}
+        {conversation && (
+          <p className="chat-conversation-status" role="status" aria-live="polite">
+            {conversation.status} · Diagram revision {conversation.lastRevision}
+          </p>
+        )}
         <div className="chat-provider">
           <label>
             <span className="sr-only">Provider</span>
-            <select value={providerId} onChange={(e) => setProvider(e.target.value)}>
+            <select aria-label="Provider" value={providerId} onChange={(e) => setProvider(e.target.value)}>
               {providers.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.label}
@@ -129,7 +133,7 @@ export function ChatPanel(): JSX.Element {
           {provider && provider.models.length > 0 && (
             <label>
               <span className="sr-only">Model</span>
-              <select value={model} onChange={(e) => setModel(e.target.value)}>
+              <select aria-label="Model" value={model} onChange={(e) => setModel(e.target.value)}>
                 {provider.models.map((m) => (
                   <option key={m.id} value={m.id}>
                     {m.label}
@@ -142,7 +146,7 @@ export function ChatPanel(): JSX.Element {
           {modelInfo && modelInfo.efforts.length > 0 && (
             <label className="effort-select">
               <span className="sr-only">Reasoning effort</span>
-              <select value={effort} onChange={(e) => setEffort(e.target.value)}>
+              <select aria-label="Reasoning effort" value={effort} onChange={(e) => setEffort(e.target.value)}>
                 {modelInfo.efforts.map((e) => (
                   <option key={e} value={e}>
                     {e}
@@ -194,6 +198,7 @@ export function ChatPanel(): JSX.Element {
         </label>
         <textarea
           id="agent-prompt"
+          aria-label="Change request"
           value={input}
           placeholder={busy ? 'Agent is working…' : 'For example: add a retry path after validation'}
           onChange={(e) => setInput(e.target.value)}
@@ -212,7 +217,7 @@ export function ChatPanel(): JSX.Element {
             Show trace
           </label>
           {busy ? (
-            <button className="danger" onClick={() => session && void api.stop(session.id)}>
+            <button type="button" className="danger" onClick={() => session && void api.stop(session.id)}>
               Stop
             </button>
           ) : (

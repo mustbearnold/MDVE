@@ -66,6 +66,20 @@ test('authenticated API preserves revision, history, conversation, and archive c
     const invalidDiagramId = await fetch(`${base}/api/sessions/not%2Fsafe`, { headers: { cookie } });
     assert.equal(invalidDiagramId.status, 400);
 
+    const invalidCreateSource = await fetch(`${base}/api/sessions`, {
+      method: 'POST',
+      headers: { ...jsonHeaders, cookie },
+      body: JSON.stringify({ source: 42 }),
+    });
+    assert.equal(invalidCreateSource.status, 400);
+
+    const invalidCreateTitle = await fetch(`${base}/api/sessions`, {
+      method: 'POST',
+      headers: { ...jsonHeaders, cookie },
+      body: JSON.stringify({ title: { nope: true } }),
+    });
+    assert.equal(invalidCreateTitle.status, 400);
+
     const startup = await fetch(`${base}/api/startup`, { headers: { cookie } });
     assert.equal(startup.status, 200);
     const starter = (await startup.json()).session as { id: string; revision: number };
@@ -112,6 +126,13 @@ test('authenticated API preserves revision, history, conversation, and archive c
       body: JSON.stringify({ selectedConversationId: conversation.id }),
     });
     assert.equal(selected.status, 200);
+
+    const invalidPatchTitle = await fetch(`${base}/api/sessions/${starter.id}`, {
+      method: 'PATCH',
+      headers: { ...jsonHeaders, cookie },
+      body: JSON.stringify({ title: 42 }),
+    });
+    assert.equal(invalidPatchTitle.status, 400);
 
     const archived = await fetch(`${base}/api/sessions/${starter.id}/archive`, { method: 'POST', headers: { cookie } });
     assert.equal(archived.status, 200);

@@ -328,7 +328,7 @@ export function Preview(): JSX.Element {
       </div>
 
       {renderError && (
-        <div className="preview-error">
+        <div className="preview-error" role="alert" aria-live="assertive">
           <strong>Diagram error</strong>
           {reserved.length > 0 && (
             <p className="preview-hint">

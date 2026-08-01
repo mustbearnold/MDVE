@@ -20,6 +20,10 @@ function packagePathsFromDryRun() {
   return manifest[0].files.map((file) => file.path);
 }
 
+function archiveEntryBytes(path, entry) {
+  return execFileSync('tar', ['-xOzf', path, `package/${entry}`]);
+}
+
 const paths = candidate ? packagePathsFromArchive(candidate) : packagePathsFromDryRun();
 const forbidden = /(^|\/)(\.scratch|\.agents|\.github|node_modules|server\/src|web\/src)(\/|$)|\.map$/;
 const required = ['package.json', 'README.md', 'LICENSE.md', 'NOTICE.md', 'bin/mdve.mjs', 'dist/web/index.html', 'dist/server/index.js'];
@@ -40,5 +44,27 @@ if (initialBytes > 500_000) throw new Error(`Initial application chunk is ${init
 
 const packageJson = JSON.parse(readFileSync('package.json', 'utf8'));
 if (packageJson.private) throw new Error('Release package must not be private');
-const digest = candidate ? createHash('sha512').update(readFileSync(candidate)).digest('base64') : undefined;
-console.log(JSON.stringify({ candidate: candidate ?? 'npm pack --dry-run', version: packageJson.version, files: paths.length, initialChunk, initialBytes, integrity: digest ? `sha512-${digest}` : null }, null, 2));
+if (packageJson.bin?.mdve !== 'bin/mdve.mjs') throw new Error('Release package must expose bin/mdve.mjs as the mdve executable');
+if (packageJson.engines?.node !== '^22.11.0 || ^24.11.0') throw new Error('Release package has an unexpected Node support range');
+if (packageJson.repository?.url !== 'git+https://github.com/mustbearnold/MDVE.git') throw new Error('Release package repository metadata is not canonical');
+
+const archiveBytes = candidate ? readFileSync(candidate) : undefined;
+const sha256 = archiveBytes ? createHash('sha256').update(archiveBytes).digest('hex') : null;
+const sha512 = archiveBytes ? createHash('sha512').update(archiveBytes).digest('base64') : null;
+const archiveInitial = candidate
+  ? paths.find((path) => /^dist\/web\/assets\/index-.*\.js$/.test(path))
+  : undefined;
+if (candidate && !archiveInitial) throw new Error('Release artifact is missing the initial application JavaScript chunk');
+const exactInitialBytes = archiveInitial ? archiveEntryBytes(candidate, archiveInitial).byteLength : initialBytes;
+if (exactInitialBytes > 500_000) throw new Error(`Initial application chunk is ${exactInitialBytes} bytes; limit is 500000`);
+
+console.log(JSON.stringify({
+  candidate: candidate ?? 'npm pack --dry-run',
+  version: packageJson.version,
+  files: paths.length,
+  bytes: archiveBytes?.byteLength ?? null,
+  sha256,
+  initialChunk: archiveInitial ?? initialChunk,
+  initialBytes: exactInitialBytes,
+  integrity: sha512 ? `sha512-${sha512}` : null,
+}, null, 2));

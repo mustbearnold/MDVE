@@ -102,7 +102,7 @@ function selectedConversation(records: ConversationRecord[], preferredId?: strin
   );
 }
 
-async function flushDiagramBeforeNavigation(diagram: SessionMeta | null): Promise<void> {
+export async function flushDiagramBeforeNavigation(diagram: SessionMeta | null): Promise<void> {
   if (!diagram) return;
   await diagramPersistence.flush(diagram.id);
   const saveStatus = diagramPersistence.status(diagram.id);

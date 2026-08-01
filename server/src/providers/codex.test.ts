@@ -46,7 +46,7 @@ lines.on('line', (line) => {
     if (!pendingSlowTurn) {
       setTimeout(() => {
         send({ method: 'item/agentMessage/delta', params: { delta: 'fixture response' } });
-        send({ method: 'turn/completed', params: { turn: { id: 'turn-fixture', status: 'completed' } } });
+        send({ method: 'turn/completed', params: { turn: { id: 'turn-fixture', status: message.params?.input?.[0]?.text === 'unknown' ? 'paused' : 'completed' } } });
       }, 40);
     }
   } else if (message.method === 'turn/interrupt') {
@@ -71,7 +71,8 @@ lines.on('line', (line) => {
     const provider = new CodexProvider();
     const status = await provider.status();
     assert.equal(status.ok, true);
-    assert.match(status.detail, /fixture@example\.test/);
+    assert.match(status.detail, /ChatGPT account/);
+    assert.doesNotMatch(status.detail, /fixture@example\.test/);
 
     const catalog = await provider.catalog();
     assert.deepEqual(catalog.models[0], {
@@ -97,6 +98,11 @@ lines.on('line', (line) => {
       (event: AgentEvent) => resumedEvents.push(event),
     );
     assert.ok(resumedEvents.some((event) => event.type === 'message'));
+
+    await assert.rejects(
+      () => provider.run({ prompt: 'unknown', workspace: root, threadId: 'thread-fixture', signal: new AbortController().signal }, () => undefined),
+      /unsupported status paused/,
+    );
 
     const controller = new AbortController();
     const interrupted = provider.run(

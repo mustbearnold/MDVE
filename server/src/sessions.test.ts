@@ -63,6 +63,7 @@ test('every atomic-write fault point leaves the previous revision authoritative'
       const state = await getDiagramState(session.id);
       assert.equal(state?.revision, 1, point);
       assert.equal(state?.source, 'flowchart TD\n  A --> B\n', point);
+      assert.equal(state?.checksum, '58bea5a915246eeefd532612cca0be9e9125d397aa2ecebf55f5743a5a13be61', point);
     }
   } finally {
     setDurabilityFaultInjector();

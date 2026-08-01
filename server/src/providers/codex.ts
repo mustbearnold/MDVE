@@ -243,7 +243,9 @@ export class CodexProvider implements Provider {
       const result = await client.request<{ account?: CodexAccount | null; requiresOpenaiAuth?: boolean }>('account/read', {});
       if (!result.account) return { ok: false, detail: 'Codex is not logged in. Run `codex login`, then retry.' };
       if (result.account.type !== 'chatgpt') return { ok: false, detail: 'MDVE v1 requires a ChatGPT-authenticated Codex account.' };
-      return { ok: true, detail: `${version} · ${result.account.email ?? 'ChatGPT account'}` };
+      // Authentication state is useful to the UI, but an account identifier is
+      // not. Keep provider diagnostics free of user identity and credentials.
+      return { ok: true, detail: `${version} · ChatGPT account` };
     } catch {
       return { ok: false, detail: `Codex app-server is unavailable for ${version}` };
     } finally {
@@ -259,7 +261,7 @@ export class CodexProvider implements Provider {
       client = await AppServerClient.start();
       const result = await client.request<{ data?: CodexModel[] }>('model/list', {});
       const models = (result.data ?? []).map(modelInfo).filter((model): model is ModelInfo => Boolean(model));
-      const defaultModel = (result.data ?? []).find((model) => model.isDefault)?.id;
+      const defaultModel = (result.data ?? []).find((model) => model.isDefault)?.id ?? (result.data ?? []).find((model) => model.isDefault)?.model;
       const defaultInfo = models.find((model) => model.id === defaultModel);
       return { models, defaultModel, defaultEffort: defaultInfo?.defaultEffort };
     } catch {
@@ -359,7 +361,8 @@ export class CodexProvider implements Provider {
               const turn = (params as TurnCompletedParams).turn;
               const status = turn?.status;
               if (status === 'failed') reject(new Error(turn?.error?.message ?? 'Codex turn failed'));
-              else resolve();
+              else if (status === 'completed' || status === 'interrupted') resolve();
+              else reject(new Error(`Codex turn ended with unsupported status ${status ?? 'unknown'}`));
               break;
             }
             case 'error': {
