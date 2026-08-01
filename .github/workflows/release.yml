@@ -24,7 +24,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47fe5020 # v7.0.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24.11.0"
           registry-url: https://registry.npmjs.org
@@ -48,12 +48,26 @@ jobs:
           npm run test:reliability
           npm run test:release:stability
 
+      - name: Install exact supported Codex CLI
+        run: npm install --prefix "$RUNNER_TEMP/codex" @openai/codex@0.146.0
+
+      - name: Generate and validate Codex protocol artifacts
+        env:
+          MDVE_CODEX_BIN: ${{ runner.temp }}/codex/node_modules/.bin/codex
+          MDVE_CODEX_SCHEMA_OUTPUT: test-results/codex-schema.json
+        run: npm run test:codex:schema
+
       - name: Build and inspect exact npm candidate
         run: |
           mkdir -p release
           npm pack --pack-destination release --json
           VERSION=$(node -p "require('./package.json').version")
           npm run verify:artifact -- "release/mdve-${VERSION}.tgz"
+
+      - name: Run packaged process-crash recovery matrix
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          MDVE_E2E_ARCHIVE="release/mdve-${VERSION}.tgz" MDVE_PROCESS_CRASH_OUTPUT="release/process-crash.json" npm run test:process-crash
 
       - name: Run packaged browser and accessibility tests
         run: |
@@ -74,7 +88,7 @@ jobs:
       - name: Write release evidence manifest
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          MDVE_PERFORMANCE_OUTPUT="release/performance.json" MDVE_STABILITY_SUMMARY="test-results/release-stability/summary.json" MDVE_LIFECYCLE_OUTPUT="release/lifecycle.json" node scripts/write-release-evidence.mjs "release/mdve-${VERSION}.tgz" release/evidence.json
+          MDVE_PERFORMANCE_OUTPUT="release/performance.json" MDVE_STABILITY_SUMMARY="test-results/release-stability/summary.json" MDVE_LIFECYCLE_OUTPUT="release/lifecycle.json" MDVE_PROCESS_CRASH_OUTPUT="release/process-crash.json" MDVE_CODEX_SCHEMA_OUTPUT="test-results/codex-schema.json" MDVE_CODEX_BIN="$RUNNER_TEMP/codex/node_modules/.bin/codex" node scripts/write-release-evidence.mjs "release/mdve-${VERSION}.tgz" release/evidence.json
 
       - name: Publish the immutable candidate under the next tag
         run: |
@@ -91,7 +105,7 @@ jobs:
           MDVE_TRUSTED_PUBLISHER: npm trusted publishing via GitHub Actions OIDC; registry integrity and signatures verified
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          MDVE_PERFORMANCE_OUTPUT="release/performance.json" MDVE_STABILITY_SUMMARY="test-results/release-stability/summary.json" MDVE_LIFECYCLE_OUTPUT="release/lifecycle.json" MDVE_REGISTRY_EVIDENCE="release/registry.json" node scripts/write-release-evidence.mjs "release/mdve-${VERSION}.tgz" release/evidence.json
+          MDVE_PERFORMANCE_OUTPUT="release/performance.json" MDVE_STABILITY_SUMMARY="test-results/release-stability/summary.json" MDVE_LIFECYCLE_OUTPUT="release/lifecycle.json" MDVE_PROCESS_CRASH_OUTPUT="release/process-crash.json" MDVE_CODEX_SCHEMA_OUTPUT="test-results/codex-schema.json" MDVE_CODEX_BIN="$RUNNER_TEMP/codex/node_modules/.bin/codex" MDVE_REGISTRY_EVIDENCE="release/registry.json" node scripts/write-release-evidence.mjs "release/mdve-${VERSION}.tgz" release/evidence.json
 
       - name: Upload release evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -100,6 +114,7 @@ jobs:
           path: |
             release/
             test-results/release-stability/
+            test-results/codex-schema.json
           if-no-files-found: error
 
       - name: Record stable-promotion boundary

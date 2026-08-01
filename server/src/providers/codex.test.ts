@@ -45,6 +45,7 @@ lines.on('line', (line) => {
     setTimeout(() => send({ method: 'turn/started', params: { turn: { id: 'turn-fixture' } } }), 20);
     if (!pendingSlowTurn) {
       setTimeout(() => {
+        send({ method: 'future/notification', params: { newField: true } });
         send({ method: 'item/agentMessage/delta', params: { delta: 'fixture response' } });
         send({ method: 'turn/completed', params: { turn: { id: 'turn-fixture', status: message.params?.input?.[0]?.text === 'unknown' ? 'paused' : 'completed' } } });
       }, 40);
@@ -92,6 +93,7 @@ lines.on('line', (line) => {
     );
     assert.ok(firstEvents.some((event) => event.type === 'thread' && event.threadId === 'thread-fixture'));
     assert.ok(firstEvents.some((event) => event.type === 'message' && event.text === 'fixture response'));
+    assert.ok(firstEvents.some((event) => event.type === 'tool' && event.name === 'app-server:future/notification'));
 
     const resumedEvents: AgentEvent[] = [];
     await provider.run(

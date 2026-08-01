@@ -5,6 +5,22 @@ async function waitForSaved(page: Page, revision: number): Promise<void> {
   await expect(page.getByText(`Saved · revision ${revision}`)).toBeVisible({ timeout: 10_000 });
 }
 
+async function seedRecoveryDraft(page: Page, draft: { sessionId: string; source: string; baseRevision: number }): Promise<void> {
+  await page.evaluate((value) => new Promise<void>((resolve, reject) => {
+    const request = indexedDB.open('mdve-recovery', 1);
+    request.onerror = () => reject(request.error ?? new Error('Could not open recovery database'));
+    request.onsuccess = () => {
+      const transaction = request.result.transaction('drafts', 'readwrite');
+      transaction.objectStore('drafts').put({ ...value, updatedAt: Date.now() });
+      transaction.oncomplete = () => {
+        request.result.close();
+        resolve();
+      };
+      transaction.onerror = () => reject(transaction.error ?? new Error('Could not seed recovery draft'));
+    };
+  }), draft);
+}
+
 test.beforeEach(async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 800, height: 900 });
   const response = await page.request.post('/api/sessions', {
@@ -86,6 +102,19 @@ test('compact layout keeps the critical edit and recovery path operable', async 
   }
 });
 
+test('large text, forced colors, and reduced motion preserve the critical workflow', async ({ page }) => {
+  await page.emulateMedia({ forcedColors: 'active', reducedMotion: 'reduce' });
+  await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+
+  await page.getByRole('button', { name: 'Source', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Mermaid source' }).fill('flowchart TD\n  zoom[Large text] --> done[Done]\n');
+  await waitForSaved(page, 2);
+  await page.getByRole('button', { name: 'Preview', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Node: Large text' })).toBeVisible();
+});
+
 test('keyboard-only editing, preview, and recovery remain operable', async ({ page }) => {
   const sourceTab = page.getByRole('button', { name: 'Source', exact: true });
   await sourceTab.focus();
@@ -109,4 +138,94 @@ test('keyboard-only editing, preview, and recovery remain operable', async ({ pa
   await restoreButtons.nth(1).focus();
   await page.keyboard.press('Enter');
   await waitForSaved(page, 3);
+});
+
+test('browser recovery drafts survive reload and can be promoted from a stale revision', async ({ page }) => {
+  const sessionId = await page.evaluate(() => localStorage.getItem('mdve.session'));
+  expect(sessionId).toBeTruthy();
+  const draft = 'flowchart TD\n  draft[Recovered draft] --> done[Done]\n';
+  await seedRecoveryDraft(page, { sessionId: sessionId!, source: draft, baseRevision: 0 });
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Source', exact: true }).click();
+  await expect(page.getByText('Recovery draft available')).toBeVisible();
+  await expect(page.locator('.cm-content')).not.toContainText('Recovered draft');
+
+  await page.getByRole('button', { name: 'Use recovery draft' }).click();
+  await waitForSaved(page, 2);
+  const response = await page.request.get(`/api/sessions/${sessionId}`);
+  expect((await response.json()).source).toBe(draft);
+});
+
+test('a same-revision recovery draft is restored into the editor after reload', async ({ page }) => {
+  const sessionId = await page.evaluate(() => localStorage.getItem('mdve.session'));
+  expect(sessionId).toBeTruthy();
+  const draft = 'flowchart TD\n  reload[Reloaded draft] --> done[Done]\n';
+  await seedRecoveryDraft(page, { sessionId: sessionId!, source: draft, baseRevision: 1 });
+  await page.route('**/api/sessions/*/diagram', (route) => route.abort());
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Source', exact: true }).click();
+  await expect(page.locator('.cm-content')).toContainText('Reloaded draft');
+  await expect(page.getByText('Recovery draft available')).toBeVisible();
+});
+
+test('browser-process restart preserves a recovery draft', async ({ page }, testInfo) => {
+  const sessionId = await page.evaluate(() => localStorage.getItem('mdve.session'));
+  expect(sessionId).toBeTruthy();
+  const browser = page.context().browser();
+  expect(browser).toBeTruthy();
+  const browserType = browser!.browserType();
+  const profile = testInfo.outputPath('browser-restart-profile');
+  const contextOptions = { baseURL: 'http://127.0.0.1:4187', headless: true, viewport: { width: 800, height: 900 } };
+  const draft = 'flowchart TD\n  process[Process restart] --> done[Done]\n';
+  const firstContext = await browserType.launchPersistentContext(profile, contextOptions);
+  try {
+    const firstPage = firstContext.pages()[0] ?? await firstContext.newPage();
+    await firstPage.goto('/');
+    await firstPage.evaluate((id) => localStorage.setItem('mdve.session', id), sessionId);
+    await firstPage.reload();
+    await waitForSaved(firstPage, 1);
+    await seedRecoveryDraft(firstPage, { sessionId: sessionId!, source: draft, baseRevision: 0 });
+  } finally {
+    await firstContext.close();
+  }
+
+  const restartedContext = await browserType.launchPersistentContext(profile, contextOptions);
+  try {
+    const restartedPage = restartedContext.pages()[0] ?? await restartedContext.newPage();
+    await restartedPage.goto('/');
+    await restartedPage.getByRole('button', { name: 'Source', exact: true }).click();
+    await expect(restartedPage.getByText('Recovery draft available')).toBeVisible();
+    await expect(restartedPage.locator('.cm-content')).not.toContainText('Process restart');
+    await restartedPage.getByRole('button', { name: 'Use recovery draft' }).click();
+    await waitForSaved(restartedPage, 2);
+    const response = await page.request.get(`/api/sessions/${sessionId}`);
+    expect((await response.json()).source).toBe(draft);
+  } finally {
+    await restartedContext.close();
+  }
+});
+
+test('browser draft storage denial is visible', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(IDBFactory.prototype, 'open', {
+      configurable: true,
+      value: () => { throw new DOMException('Storage denied', 'SecurityError'); },
+    });
+  });
+  await page.reload();
+  await expect(page.getByText('Draft recovery unavailable')).toBeVisible();
+});
+
+test('browser draft quota failure is visible', async ({ page }) => {
+  await page.evaluate(() => {
+    Object.defineProperty(IDBObjectStore.prototype, 'put', {
+      configurable: true,
+      value: () => { throw new DOMException('Quota exceeded', 'QuotaExceededError'); },
+    });
+  });
+  await page.getByRole('button', { name: 'Source', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Mermaid source' }).fill('flowchart TD\n  quota[Quota] --> done[Done]\n');
+  await expect(page.getByText('Draft recovery unavailable')).toBeVisible();
 });

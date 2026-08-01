@@ -1,0 +1,32 @@
+{
+  "codexVersion": "0.146.0",
+  "generatedBy": "codex-cli 0.146.0",
+  "experimental": false,
+  "commands": [
+    "codex app-server generate-ts --out <DIR>",
+    "codex app-server generate-json-schema --out <DIR>"
+  ],
+  "generatedFileCounts": { "typescript": 622, "jsonSchema": 275 },
+  "selectedArtifacts": [
+    "ClientRequest.ts",
+    "ServerNotification.ts",
+    "ClientRequest.json",
+    "ClientNotification.json",
+    "ServerNotification.json",
+    "codex_app_server_protocol.v2.schemas.json",
+    "v1/InitializeParams.json",
+    "v1/InitializeResponse.json",
+    "v2/GetAccountResponse.json",
+    "v2/ModelListResponse.json",
+    "v2/ThreadReadResponse.json",
+    "v2/ThreadResumeResponse.json",
+    "v2/ThreadStartResponse.json",
+    "v2/ThreadStartedNotification.json",
+    "v2/AgentMessageDeltaNotification.json",
+    "v2/ItemCompletedNotification.json",
+    "v2/TurnCompletedNotification.json",
+    "v2/TurnInterruptResponse.json",
+    "v2/TurnStartResponse.json",
+    "v2/TurnStartedNotification.json"
+  ]
+}

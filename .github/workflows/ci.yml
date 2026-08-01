@@ -192,6 +192,64 @@ jobs:
       - name: Run deterministic reliability soak
         run: npm run test:reliability
 
+  crash-recovery:
+    name: Process crash recovery
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22.11.0"
+          cache: npm
+
+      - name: Install and verify pinned npm
+        run: bash .github/scripts/install-pinned-npm.sh
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Linux subprocess crash matrix
+        run: npm run test:process-crash
+
+      - name: Print crash recovery evidence
+        run: cat test-results/process-crash.json
+
+  codex-schema:
+    name: Codex app-server schema contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22.11.0"
+          cache: npm
+
+      - name: Install and verify pinned npm
+        run: bash .github/scripts/install-pinned-npm.sh
+
+      - name: Install project dependencies
+        run: npm ci
+
+      - name: Install exact supported Codex CLI
+        run: npm install --prefix "$RUNNER_TEMP/codex" @openai/codex@0.146.0
+
+      - name: Generate and validate Codex protocol artifacts
+        env:
+          MDVE_CODEX_BIN: ${{ runner.temp }}/codex/node_modules/.bin/codex
+          MDVE_CODEX_SCHEMA_OUTPUT: test-results/codex-schema.json
+        run: npm run test:codex:schema
+
+      - name: Print Codex schema evidence
+        run: cat test-results/codex-schema.json
+
   lifecycle:
     name: Install lifecycle (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
@@ -230,6 +288,8 @@ jobs:
       - dependency-review
       - browser
       - reliability
+      - crash-recovery
+      - codex-schema
       - lifecycle
       - fedora
     runs-on: ubuntu-latest
@@ -242,6 +302,8 @@ jobs:
           DEPENDENCY_REVIEW_RESULT: ${{ needs.dependency-review.result }}
           BROWSER_RESULT: ${{ needs.browser.result }}
           RELIABILITY_RESULT: ${{ needs.reliability.result }}
+          CRASH_RECOVERY_RESULT: ${{ needs.crash-recovery.result }}
+          CODEX_SCHEMA_RESULT: ${{ needs.codex-schema.result }}
           LIFECYCLE_RESULT: ${{ needs.lifecycle.result }}
           FEDORA_RESULT: ${{ needs.fedora.result }}
         run: |
@@ -249,6 +311,8 @@ jobs:
           test "${SECURITY_RESULT}" = "success"
           test "${BROWSER_RESULT}" = "success"
           test "${RELIABILITY_RESULT}" = "success"
+          test "${CRASH_RECOVERY_RESULT}" = "success"
+          test "${CODEX_SCHEMA_RESULT}" = "success"
           test "${LIFECYCLE_RESULT}" = "success"
           test "${FEDORA_RESULT}" = "success"
           case "${DEPENDENCY_REVIEW_RESULT}" in

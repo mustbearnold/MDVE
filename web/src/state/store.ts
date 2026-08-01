@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 import { AgentEvent, ConversationRecord, ProviderInfo, SessionMeta, api } from '../api';
 import { Diagram, parseDiagram } from '../mermaid/parse';
-import { clearRecoveryDraft, readRecoveryDraft, writeRecoveryDraft } from './drafts';
+import { clearRecoveryDraft, readRecoveryDraft, writeRecoveryDraft, type RecoveryDraft } from './drafts';
 import { createDiagramPersistence, type SaveStatus } from './persistence';
 
 export type Selection =
@@ -32,6 +32,7 @@ interface Store {
   diagram: Diagram;
   revision: number;
   draftStatus: 'clear' | 'available' | 'degraded';
+  recoveryDraft: RecoveryDraft | null;
   selection: Selection;
   renderError: string | null;
   saveStatus: SaveStatus;
@@ -53,6 +54,7 @@ interface Store {
   redo: () => void;
   retrySave: () => void;
   setRevision: (revision: number) => void;
+  promoteDraft: () => void;
   resolveConflict: (choice: 'local' | 'current') => void;
 
   loadSession: (id?: string) => Promise<void>;
@@ -123,6 +125,7 @@ export const useStore = create<Store>((set, get) => ({
   diagram: parseDiagram(''),
   revision: 0,
   draftStatus: 'clear',
+  recoveryDraft: null,
   selection: { kind: 'none' },
   renderError: null,
   saveStatus: { state: 'saved' },
@@ -196,6 +199,21 @@ export const useStore = create<Store>((set, get) => ({
       session: state.session ? { ...state.session, revision } : state.session,
     })),
 
+  promoteDraft: () => {
+    const { session, recoveryDraft, revision } = get();
+    if (!session || !recoveryDraft || session.archived || session.agentLease) return;
+    diagramPersistence.seed(session.id, session.revision ?? revision);
+    set((state) => ({
+      source: recoveryDraft.source,
+      diagram: parseDiagram(recoveryDraft.source),
+      past: [...state.past, state.source].slice(-HISTORY_LIMIT),
+      future: [],
+      draftStatus: 'clear',
+      recoveryDraft: null,
+    }));
+    diagramPersistence.schedule(session.id, recoveryDraft.source);
+  },
+
   resolveConflict: (choice) => {
     const { session, source, saveStatus } = get();
     if (!session || saveStatus.state !== 'conflict') return;
@@ -234,6 +252,7 @@ export const useStore = create<Store>((set, get) => ({
       diagram: parseDiagram(source),
       revision: session.revision ?? 0,
       draftStatus: 'clear',
+      recoveryDraft: null,
       past: [],
       future: [],
       selection: { kind: 'none' },
@@ -250,14 +269,14 @@ export const useStore = create<Store>((set, get) => ({
       const draft = await readRecoveryDraft(session.id);
       if (draft && draft.source !== source) {
         if (draft.baseRevision === (session.revision ?? 0)) {
-          set({ draftStatus: 'available' });
+          set({ draftStatus: 'available', recoveryDraft: draft });
           get().setSource(draft.source, { history: false });
         } else {
-          set({ draftStatus: 'available' });
+          set({ draftStatus: 'available', recoveryDraft: draft });
         }
       }
     } catch {
-      set({ draftStatus: 'degraded' });
+      set({ draftStatus: 'degraded', recoveryDraft: null });
     }
   },
 
@@ -454,6 +473,7 @@ diagramPersistence = createDiagramPersistence(api.saveDiagram, {
       revision: revision ?? state.revision,
       session: state.session && revision !== undefined ? { ...state.session, revision } : state.session,
       draftStatus: 'clear',
+      recoveryDraft: null,
       saveStatus: historyAvailable === undefined ? state.saveStatus : { state: 'saved', historyAvailable },
     }));
     if (revision !== undefined) void clearRecoveryDraft(sessionId, revision).catch(() => undefined);

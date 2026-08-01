@@ -14,7 +14,7 @@ const prefix = join(tempRoot, 'prefix');
 const dataRoot = join(tempRoot, 'data');
 const outputPath = resolve(process.env.MDVE_PERFORMANCE_OUTPUT ?? join(root, 'test-results', 'performance.json'));
 const sampleCount = Number(process.env.MDVE_PERFORMANCE_SAMPLES ?? 20);
-if (!Number.isInteger(sampleCount) || sampleCount < 1) throw new Error('MDVE_PERFORMANCE_SAMPLES must be a positive integer');
+if (!Number.isInteger(sampleCount) || sampleCount < 20) throw new Error('MDVE_PERFORMANCE_SAMPLES must be at least 20 for release evidence');
 const warmPort = 4191;
 const coldPortBase = 4200;
 await mkdir(join(outputPath, '..'), { recursive: true });
@@ -95,6 +95,33 @@ function flowchartFixture(index) {
   const nodes = Array.from({ length: 100 }, (_, nodeIndex) => `  n${nodeIndex}[${nodeIndex === 0 ? `Sample ${index}` : `Node ${nodeIndex}`}]`);
   const edges = Array.from({ length: 2 }, (_, edgeIndex) => `  n${edgeIndex} --> n${edgeIndex + 1}`);
   return `flowchart LR\n${[...nodes, ...edges].join('\n')}\n`;
+}
+
+function denseFlowchartFixture(index) {
+  // A 20x10 grid keeps the fixture genuinely dense (200 nodes/300 edges)
+  // without turning the layout into a pathological 200-rank chain.
+  const nodes = Array.from({ length: 200 }, (_, nodeIndex) => `  n${nodeIndex}[${nodeIndex === 0 ? `Dense sample ${index}` : `Node ${nodeIndex}`}]`);
+  const horizontal = [];
+  for (let row = 0; row < 20; row += 1) {
+    for (let column = 0; column < 9; column += 1) {
+      const from = row * 10 + column;
+      horizontal.push(`  n${from} --> n${from + 1}`);
+    }
+  }
+  const vertical = [];
+  for (let row = 0; row < 12; row += 1) {
+    for (let column = 0; column < 10; column += 1) {
+      const from = row * 10 + column;
+      vertical.push(`  n${from} --> n${from + 10}`);
+    }
+  }
+  assert.equal(nodes.length, 200);
+  assert.equal(horizontal.length + vertical.length, 300);
+  return `flowchart TD\n${[...nodes, ...horizontal, ...vertical].join('\n')}\n`;
+}
+
+async function waitForDenseDiagram(page) {
+  await page.waitForFunction(() => document.querySelectorAll('svg g.node').length >= 200);
 }
 
 let archive = process.env.MDVE_E2E_ARCHIVE;
@@ -226,7 +253,9 @@ async function startColdLauncher(index) {
 }
 
 const coldLaunches = [];
+const denseColdOpenings = [];
 const warmNavigations = [];
+const denseWarmOpenings = [];
 const browser = await chromium.launch({ headless: true });
 const browserVersion = browser.version();
 try {
@@ -254,6 +283,26 @@ try {
         cls: metrics.cls,
         tbtMs: metrics.tbt,
       });
+
+      const denseResponse = await page.request.post(`http://127.0.0.1:${cold.port}/api/sessions`, {
+        data: { title: `Dense cold ${index}`, source: denseFlowchartFixture(index) },
+      });
+      assert.equal(denseResponse.ok(), true);
+      const denseSession = (await denseResponse.json()).session;
+      await page.evaluate((id) => localStorage.setItem('mdve.session', id), denseSession.id);
+      const denseStarted = performance.now();
+      await page.reload();
+      await page.getByRole('heading', { name: 'Preview' }).waitFor();
+      await page.getByText('Saved · revision 1').waitFor();
+      await waitForDenseDiagram(page);
+      const denseMetrics = await readVitals(page);
+      denseColdOpenings.push({
+        index,
+        openMs: performance.now() - denseStarted,
+        lcpMs: denseMetrics.lcp,
+        cls: denseMetrics.cls,
+        tbtMs: denseMetrics.tbt,
+      });
       console.log(`[performance] cold sample ${index + 1}/${sampleCount} complete cli=${cold.cliToReadyMs.toFixed(1)}ms`);
     } finally {
       await stopChild(cold.child);
@@ -270,7 +319,7 @@ try {
     page.setDefaultNavigationTimeout(15_000);
     await page.addInitScript(vitalsInitScript());
 
-    const navigationStarted = performance.now();
+    let navigationStarted;
     const response = await page.request.post(`http://127.0.0.1:${warmPort}/api/sessions`, {
       data: { title: `Performance ${index}` },
     });
@@ -281,6 +330,28 @@ try {
     });
     assert.equal(secondResponse.ok(), true);
     const second = (await secondResponse.json()).session;
+    const denseResponse = await page.request.post(`http://127.0.0.1:${warmPort}/api/sessions`, {
+      data: { title: `Dense warm ${index}`, source: denseFlowchartFixture(index) },
+    });
+    assert.equal(denseResponse.ok(), true);
+    const denseSession = (await denseResponse.json()).session;
+    await page.goto(`http://127.0.0.1:${warmPort}/`);
+    await page.evaluate((id) => localStorage.setItem('mdve.session', id), denseSession.id);
+    const denseStarted = performance.now();
+    await page.reload();
+    await page.getByRole('heading', { name: 'Preview' }).waitFor();
+    await page.getByText('Saved · revision 1').waitFor();
+    await waitForDenseDiagram(page);
+    const denseMetrics = await readVitals(page);
+    denseWarmOpenings.push({
+      index,
+      openMs: performance.now() - denseStarted,
+      lcpMs: denseMetrics.lcp,
+      cls: denseMetrics.cls,
+      tbtMs: denseMetrics.tbt,
+    });
+
+    navigationStarted = performance.now();
     await page.goto(`http://127.0.0.1:${warmPort}/`);
     await page.evaluate((id) => localStorage.setItem('mdve.session', id), session.id);
     await page.reload();
@@ -320,16 +391,31 @@ const coldNavigation = coldLaunches.map((sample) => sample.navigationToUsableMs)
 const coldLcp = coldLaunches.map((sample) => sample.lcpMs).filter((value) => typeof value === 'number');
 const coldCls = coldLaunches.map((sample) => sample.cls);
 const coldTbt = coldLaunches.map((sample) => sample.tbtMs);
+const denseColdOpen = denseColdOpenings.map((sample) => sample.openMs);
+const denseColdLcp = denseColdOpenings.map((sample) => sample.lcpMs).filter((value) => typeof value === 'number');
+const denseColdCls = denseColdOpenings.map((sample) => sample.cls);
+const denseColdTbt = denseColdOpenings.map((sample) => sample.tbtMs);
 const usable = warmNavigations.map((sample) => sample.usableMs);
 const saved = warmNavigations.map((sample) => sample.editToSavedMs);
 const editToPreview = warmNavigations.map((sample) => sample.editToPreviewMs);
 const switchTimes = warmNavigations.map((sample) => sample.switchMs);
+const denseWarmOpen = denseWarmOpenings.map((sample) => sample.openMs);
+const denseWarmLcp = denseWarmOpenings.map((sample) => sample.lcpMs).filter((value) => typeof value === 'number');
+const denseWarmCls = denseWarmOpenings.map((sample) => sample.cls);
+const denseWarmTbt = denseWarmOpenings.map((sample) => sample.tbtMs);
 
 const summary = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   archive,
   version: packageJson.version,
-  protocol: { coldLaunches: sampleCount, warmNavigations: sampleCount, browser: 'Chromium', viewport: { width: 800, height: 900 } },
+  protocol: {
+    coldLaunches: sampleCount,
+    warmNavigations: sampleCount,
+    denseColdOpenings: sampleCount,
+    denseWarmOpenings: sampleCount,
+    browser: 'Chromium',
+    viewport: { width: 800, height: 900 },
+  },
   environment: {
     node: process.versions.node,
     npm: execFileSync('npm', ['--version'], { encoding: 'utf8' }).trim(),
@@ -339,19 +425,27 @@ const summary = {
     cpuCount: cpus().length,
     memoryBytes: totalmem(),
     browser: browserVersion,
-    fixture: 'default starter diagram plus a 100-node/2-edge flowchart edit',
+    fixture: '100-node/2-edge flowchart edit plus a 200-node/300-edge dense flowchart opening',
   },
-  samples: { coldLaunches, warmNavigations },
+  samples: { coldLaunches, denseColdOpenings, warmNavigations, denseWarmOpenings },
   statistics: {
     coldCliToReadyMs: statistics(coldCli),
     coldNavigationToUsableMs: statistics(coldNavigation),
     lcpMs: statistics(coldLcp),
     cls: statistics(coldCls),
     tbtMs: statistics(coldTbt),
+    denseColdOpenMs: statistics(denseColdOpen),
+    denseColdLcpMs: statistics(denseColdLcp),
+    denseColdCls: statistics(denseColdCls),
+    denseColdTbtMs: statistics(denseColdTbt),
     warmUsableMs: statistics(usable),
     editToPreviewMs: statistics(editToPreview),
     editToSavedMs: statistics(saved),
     switchMs: statistics(switchTimes),
+    denseWarmOpenMs: statistics(denseWarmOpen),
+    denseWarmLcpMs: statistics(denseWarmLcp),
+    denseWarmCls: statistics(denseWarmCls),
+    denseWarmTbtMs: statistics(denseWarmTbt),
   },
   budgets: {
     coldCliToReadyP75Ms: percentile(coldCli, 0.75),
@@ -361,6 +455,11 @@ const summary = {
     lcpP75Ms: coldLcp.length === coldLaunches.length ? percentile(coldLcp, 0.75) : null,
     clsP75: percentile(coldCls, 0.75),
     tbtP75Ms: percentile(coldTbt, 0.75),
+    denseColdOpenP75Ms: percentile(denseColdOpen, 0.75),
+    denseColdOpenP95Ms: percentile(denseColdOpen, 0.95),
+    denseColdLcpP75Ms: denseColdLcp.length === denseColdOpenings.length ? percentile(denseColdLcp, 0.75) : null,
+    denseColdClsP75: percentile(denseColdCls, 0.75),
+    denseColdTbtP75Ms: percentile(denseColdTbt, 0.75),
     warmUsableP75Ms: percentile(usable, 0.75),
     warmUsableP95Ms: percentile(usable, 0.95),
     editToPreviewP75Ms: percentile(editToPreview, 0.75),
@@ -369,17 +468,29 @@ const summary = {
     savedP95Ms: percentile(saved, 0.95),
     switchP75Ms: percentile(switchTimes, 0.75),
     switchP95Ms: percentile(switchTimes, 0.95),
+    denseWarmOpenP75Ms: percentile(denseWarmOpen, 0.75),
+    denseWarmOpenP95Ms: percentile(denseWarmOpen, 0.95),
+    denseWarmLcpP75Ms: denseWarmLcp.length === denseWarmOpenings.length ? percentile(denseWarmLcp, 0.75) : null,
+    denseWarmClsP75: percentile(denseWarmCls, 0.75),
+    denseWarmTbtP75Ms: percentile(denseWarmTbt, 0.75),
   },
 };
 
 assert.equal(coldLaunches.length, sampleCount);
+assert.equal(denseColdOpenings.length, sampleCount);
 assert.equal(warmNavigations.length, sampleCount);
+assert.equal(denseWarmOpenings.length, sampleCount);
 assert.equal(coldLcp.length, sampleCount, 'LCP was not measured for every cold navigation');
+assert.equal(denseColdLcp.length, sampleCount, 'dense cold LCP was not measured for every opening');
+assert.equal(denseWarmLcp.length, sampleCount, 'dense warm LCP was not measured for every opening');
 assert.ok(summary.budgets.coldCliToReadyP75Ms <= 2_000, `cold CLI p75 ${summary.budgets.coldCliToReadyP75Ms}ms exceeded 2000ms`);
 assert.ok(summary.budgets.coldCliToReadyP95Ms <= 3_000, `cold CLI p95 ${summary.budgets.coldCliToReadyP95Ms}ms exceeded 3000ms`);
 assert.ok(summary.budgets.lcpP75Ms <= 2_500, `LCP p75 ${summary.budgets.lcpP75Ms}ms exceeded 2500ms`);
 assert.ok(summary.budgets.clsP75 <= 0.1, `CLS p75 ${summary.budgets.clsP75} exceeded 0.1`);
 assert.ok(summary.budgets.tbtP75Ms <= 200, `TBT p75 ${summary.budgets.tbtP75Ms}ms exceeded 200ms`);
+assert.ok(summary.budgets.denseColdOpenP95Ms <= 1_000, `dense cold open p95 ${summary.budgets.denseColdOpenP95Ms}ms exceeded 1000ms`);
+assert.ok(summary.budgets.denseColdLcpP75Ms <= 2_500, `dense cold LCP p75 ${summary.budgets.denseColdLcpP75Ms}ms exceeded 2500ms`);
+assert.ok(summary.budgets.denseColdClsP75 <= 0.1, `dense cold CLS p75 ${summary.budgets.denseColdClsP75} exceeded 0.1`);
 assert.ok(summary.budgets.warmUsableP75Ms <= 2_000, `warm usable p75 ${summary.budgets.warmUsableP75Ms}ms exceeded 2000ms`);
 assert.ok(summary.budgets.warmUsableP95Ms <= 3_000, `warm usable p95 ${summary.budgets.warmUsableP95Ms}ms exceeded 3000ms`);
 assert.ok(summary.budgets.editToPreviewP75Ms <= 200, `edit-to-preview p75 ${summary.budgets.editToPreviewP75Ms}ms exceeded 200ms`);
@@ -388,6 +499,9 @@ assert.ok(summary.budgets.savedP75Ms <= 750, `save p75 ${summary.budgets.savedP7
 assert.ok(summary.budgets.savedP95Ms <= 1_500, `save p95 ${summary.budgets.savedP95Ms}ms exceeded 1500ms`);
 assert.ok(summary.budgets.switchP75Ms <= 500, `switch p75 ${summary.budgets.switchP75Ms}ms exceeded 500ms`);
 assert.ok(summary.budgets.switchP95Ms <= 1_000, `switch p95 ${summary.budgets.switchP95Ms}ms exceeded 1000ms`);
+assert.ok(summary.budgets.denseWarmOpenP95Ms <= 1_000, `dense warm open p95 ${summary.budgets.denseWarmOpenP95Ms}ms exceeded 1000ms`);
+assert.ok(summary.budgets.denseWarmLcpP75Ms <= 2_500, `dense warm LCP p75 ${summary.budgets.denseWarmLcpP75Ms}ms exceeded 2500ms`);
+assert.ok(summary.budgets.denseWarmClsP75 <= 0.1, `dense warm CLS p75 ${summary.budgets.denseWarmClsP75} exceeded 0.1`);
 
 await (await import('node:fs/promises')).writeFile(outputPath, `${JSON.stringify(summary, null, 2)}\n`);
 console.log(JSON.stringify(summary.budgets, null, 2));

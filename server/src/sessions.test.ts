@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -12,6 +12,7 @@ import {
   getDiagramState,
   readAgentTurn,
   readHistory,
+  readMeta,
   recoverInterruptedTurns,
   setDataRoot,
   setDurabilityFaultInjector,
@@ -19,6 +20,8 @@ import {
   RevisionConflictError,
   beginAgentTurn,
   restoreRecoveryPoint,
+  DATA_SCHEMA_VERSION,
+  UnsupportedDataSchemaError,
 } from './sessions.js';
 
 test('durable revisions reject stale writers and preserve recovery points', async () => {
@@ -40,6 +43,30 @@ test('durable revisions reject stale writers and preserve recovery points', asyn
     const history = await readHistory(session.id);
     assert.equal(history.length, 2);
     assert.equal((await getDiagramState(session.id))?.source, 'flowchart LR\n  A --> B\n');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('newer data schemas fail without mutating the workspace', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mdve-schema-'));
+  setDataRoot(root);
+  try {
+    const session = await createSession({ source: 'flowchart TD\n  A --> B\n' });
+    const metaPath = join(root, 'sessions', session.id, 'session.json');
+    const revisionPath = join(root, 'sessions', session.id, 'revision.json');
+    const originalMeta = await readFile(metaPath, 'utf8');
+    const originalRevision = await readFile(revisionPath, 'utf8');
+    const newer = { ...JSON.parse(originalMeta), schemaVersion: DATA_SCHEMA_VERSION + 1 };
+    await writeFile(metaPath, `${JSON.stringify(newer, null, 2)}\n`, 'utf8');
+
+    await assert.rejects(
+      () => getDiagramState(session.id),
+      (error: unknown) => error instanceof UnsupportedDataSchemaError && error.foundVersion === DATA_SCHEMA_VERSION + 1,
+    );
+    assert.equal(await readFile(metaPath, 'utf8'), `${JSON.stringify(newer, null, 2)}\n`);
+    assert.equal(await readFile(join(root, 'sessions', session.id, 'diagram.mmd'), 'utf8'), 'flowchart TD\n  A --> B\n');
+    assert.equal(await readFile(revisionPath, 'utf8'), originalRevision);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -71,6 +98,34 @@ test('every atomic-write fault point leaves the previous revision authoritative'
   }
 });
 
+test('a failed recovery manifest marks durability degraded and blocks agent checkpoints', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mdve-history-fault-'));
+  setDataRoot(root);
+  try {
+    const session = await createSession({ source: 'flowchart TD\n  A --> B\n' });
+    await writeDiagram(session.id, 'flowchart TD\n  A --> C\n', { expectedRevision: 1 });
+    let armed = true;
+    setDurabilityFaultInjector((point, targetPath) => {
+      if (armed && point === 'rename' && targetPath?.endsWith('index.json')) {
+        armed = false;
+        throw new Error('injected recovery manifest failure');
+      }
+    });
+    await assert.rejects(() => createRecoveryPoint(session.id, 'manual'), /injected recovery manifest failure/);
+    assert.equal((await readMeta(session.id))?.historyDegraded, true);
+    const conversation = await createConversation(session.id);
+    armed = true;
+    await assert.rejects(
+      () => beginAgentTurn(session.id, conversation.id, { prompt: 'checkpoint', provider: 'codex' }),
+      /injected recovery manifest failure/,
+    );
+    assert.equal((await readAgentTurn(session.id))?.status, undefined);
+  } finally {
+    setDurabilityFaultInjector();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('agent turns persist a lease and recover running work as interrupted', async () => {
   const root = await mkdtemp(join(tmpdir(), 'mdve-turns-'));
   setDataRoot(root);
@@ -91,6 +146,31 @@ test('agent turns persist a lease and recover running work as interrupted', asyn
     assert.equal(finished?.status, 'completed');
     const meta = JSON.parse(await readFile(join(root, 'sessions', session.id, 'session.json'), 'utf8')) as { agentLease?: unknown };
     assert.equal(meta.agentLease, undefined);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('agent output is reconciled instead of being repaired away while the lease is active', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mdve-agent-output-'));
+  setDataRoot(root);
+  try {
+    const session = await createSession({ source: 'flowchart TD\n  A --> B\n' });
+    const conversation = await createConversation(session.id);
+    const turn = await beginAgentTurn(session.id, conversation.id, { prompt: 'write', provider: 'codex' });
+    const source = 'flowchart TD\n  agent[Agent output] --> done[Done]\n';
+    await writeFile(join(root, 'sessions', session.id, 'diagram.mmd'), source, 'utf8');
+
+    const inFlight = await getDiagramState(session.id);
+    assert.equal(inFlight?.source, source);
+    assert.equal(inFlight?.revision, 1);
+
+    const finished = await finishAgentTurn(session.id, 'completed', { finalResponse: 'Done' });
+    assert.equal(finished?.id, turn.id);
+    assert.equal(finished?.endingRevision, 2);
+    const completed = await getDiagramState(session.id);
+    assert.equal(completed?.source, source);
+    assert.equal(completed?.revision, 2);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

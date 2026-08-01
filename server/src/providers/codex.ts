@@ -59,6 +59,11 @@ interface TurnResponse {
   turn?: { id?: string; status?: string };
 }
 
+interface InitializeResponse {
+  userAgent?: string;
+  serverInfo?: { version?: string };
+}
+
 interface TurnCompletedParams {
   threadId?: string;
   turn?: { id?: string; status?: string; error?: { message?: string } | null };
@@ -152,11 +157,14 @@ class AppServerClient {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     const client = new AppServerClient(stderrTail, child);
-    const initialized = await client.request<{ serverInfo?: { version?: string } }>('initialize', {
+    const initialized = await client.request<InitializeResponse>('initialize', {
       clientInfo: { name: 'mdve', title: 'MDVE', version: CLIENT_VERSION },
       capabilities: { experimentalApi: false, requestAttestation: false },
     });
-    const serverVersion = initialized.serverInfo?.version ?? null;
+    // Codex 0.146.x exposes the server version in the documented userAgent;
+    // retain the older fixture/serverInfo shape while the compatibility range
+    // is still pinned to this release line.
+    const serverVersion = initialized.serverInfo?.version ?? initialized.userAgent ?? null;
     if (!isSupportedVersion(serverVersion)) {
       client.close();
       throw new Error(`Codex app-server ${serverVersion ?? 'unknown'} is outside MDVE's tested range ${CODEX_COMPATIBILITY_RANGE}`);

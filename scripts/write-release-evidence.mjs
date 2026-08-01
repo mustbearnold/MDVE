@@ -31,6 +31,8 @@ const tarListing = execFileSync('tar', ['-tzf', archive], { encoding: 'utf8' })
 const performancePath = process.env.MDVE_PERFORMANCE_OUTPUT ?? 'release/performance.json';
 const stabilityPath = process.env.MDVE_STABILITY_SUMMARY ?? 'test-results/release-stability/summary.json';
 const lifecyclePath = process.env.MDVE_LIFECYCLE_OUTPUT ?? 'release/lifecycle.json';
+const processCrashPath = process.env.MDVE_PROCESS_CRASH_OUTPUT ?? 'test-results/process-crash.json';
+const codexSchemaPath = process.env.MDVE_CODEX_SCHEMA_OUTPUT ?? 'test-results/codex-schema.json';
 const registryPath = process.env.MDVE_REGISTRY_EVIDENCE ?? 'release/registry.json';
 const sourceVisibility = process.env.MDVE_SOURCE_VISIBILITY ?? 'public';
 const registryEvidence = await readOptional(registryPath);
@@ -78,6 +80,8 @@ const evidence = {
     performance: await readOptional(performancePath),
     stability: await readOptional(stabilityPath),
     lifecycle: await readOptional(lifecyclePath),
+    processCrash: await readOptional(processCrashPath),
+    codexSchema: await readOptional(codexSchemaPath),
   },
   releaseRecord: {
     githubRun: process.env.GITHUB_SERVER_URL && process.env.GITHUB_RUN_ID

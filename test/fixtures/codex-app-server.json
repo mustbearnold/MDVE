@@ -1,0 +1,181 @@
+{
+  "codexVersion": "0.146.0",
+  "requests": [
+    {
+      "method": "initialize",
+      "id": 1,
+      "params": {
+        "clientInfo": { "name": "mdve", "version": "1.0.0" },
+        "capabilities": { "experimentalApi": false, "requestAttestation": false }
+      }
+    },
+    { "method": "account/read", "id": 2, "params": {} },
+    { "method": "model/list", "id": 3, "params": {} },
+    {
+      "method": "thread/start",
+      "id": 4,
+      "params": {
+        "model": "fixture-model",
+        "cwd": "/workspace",
+        "sandbox": "workspace-write",
+        "approvalPolicy": "never",
+        "threadSource": "appServer"
+      }
+    },
+    {
+      "method": "thread/resume",
+      "id": 5,
+      "params": {
+        "threadId": "thread-fixture",
+        "cwd": "/workspace",
+        "sandbox": "workspace-write",
+        "approvalPolicy": "never"
+      }
+    },
+    { "method": "thread/read", "id": 6, "params": { "threadId": "thread-fixture", "includeTurns": true } },
+    {
+      "method": "turn/start",
+      "id": 7,
+      "params": {
+        "threadId": "thread-fixture",
+        "input": [{ "type": "text", "text": "Update the diagram", "text_elements": [] }],
+        "cwd": "/workspace",
+        "model": "fixture-model",
+        "effort": "medium",
+        "approvalPolicy": "never",
+        "sandboxPolicy": {
+          "type": "workspaceWrite",
+          "writableRoots": ["/workspace"],
+          "networkAccess": false,
+          "excludeTmpdirEnvVar": false,
+          "excludeSlashTmp": false
+        }
+      }
+    },
+    { "method": "turn/interrupt", "id": 8, "params": { "threadId": "thread-fixture", "turnId": "turn-fixture" } }
+  ],
+  "clientNotifications": [
+    { "method": "initialized" }
+  ],
+  "responses": [
+    {
+      "schema": "v1/InitializeResponse",
+      "value": {
+        "userAgent": "Codex Desktop/0.146.0 (Linux; x86_64) dumb (mdve; 1.0.0)",
+        "codexHome": "/tmp/codex",
+        "platformFamily": "unix",
+        "platformOs": "linux"
+      }
+    },
+    { "schema": "v2/GetAccountResponse", "value": { "account": null, "requiresOpenaiAuth": true } },
+    { "schema": "v2/ModelListResponse", "value": { "data": [], "nextCursor": null } },
+    {
+      "schema": "v2/ThreadStartResponse",
+      "value": {
+        "thread": {
+          "id": "thread-fixture",
+          "cliVersion": "0.146.0",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "cwd": "/workspace",
+          "ephemeral": false,
+          "modelProvider": "openai",
+          "preview": "",
+          "sessionId": "session-fixture",
+          "source": "appServer",
+          "status": { "type": "idle" },
+          "turns": []
+        },
+        "approvalPolicy": "never",
+        "approvalsReviewer": "user",
+        "cwd": "/workspace",
+        "model": "fixture-model",
+        "modelProvider": "openai",
+        "sandbox": { "type": "workspaceWrite", "writableRoots": ["/workspace"], "networkAccess": false },
+        "reasoningEffort": "medium"
+      }
+    },
+    {
+      "schema": "v2/ThreadResumeResponse",
+      "value": {
+        "thread": {
+          "id": "thread-fixture",
+          "cliVersion": "0.146.0",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "cwd": "/workspace",
+          "ephemeral": false,
+          "modelProvider": "openai",
+          "preview": "",
+          "sessionId": "session-fixture",
+          "source": "appServer",
+          "status": { "type": "idle" },
+          "turns": []
+        },
+        "approvalPolicy": "never",
+        "approvalsReviewer": "user",
+        "cwd": "/workspace",
+        "model": "fixture-model",
+        "modelProvider": "openai",
+        "sandbox": { "type": "workspaceWrite", "writableRoots": ["/workspace"], "networkAccess": false }
+      }
+    },
+    {
+      "schema": "v2/ThreadReadResponse",
+      "value": {
+        "thread": {
+          "id": "thread-fixture",
+          "cliVersion": "0.146.0",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "cwd": "/workspace",
+          "ephemeral": false,
+          "modelProvider": "openai",
+          "preview": "",
+          "sessionId": "session-fixture",
+          "source": "appServer",
+          "status": { "type": "idle" },
+          "turns": []
+        }
+      }
+    },
+    { "schema": "v2/TurnStartResponse", "value": { "turn": { "id": "turn-fixture", "items": [], "status": "inProgress" } } },
+    { "schema": "v2/TurnInterruptResponse", "value": {} }
+  ],
+  "notifications": [
+    {
+      "method": "thread/started",
+      "params": {
+        "thread": {
+          "id": "thread-fixture",
+          "cliVersion": "0.146.0",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "cwd": "/workspace",
+          "ephemeral": false,
+          "modelProvider": "openai",
+          "preview": "",
+          "sessionId": "session-fixture",
+          "source": "appServer",
+          "status": { "type": "idle" },
+          "turns": []
+        }
+      }
+    },
+    { "method": "turn/started", "params": { "threadId": "thread-fixture", "turn": { "id": "turn-fixture", "items": [], "status": "inProgress" } } },
+    { "method": "item/agentMessage/delta", "params": { "delta": "fixture response", "itemId": "item-fixture", "threadId": "thread-fixture", "turnId": "turn-fixture" } },
+    {
+      "method": "item/completed",
+      "params": {
+        "completedAtMs": 1,
+        "item": { "type": "agentMessage", "id": "item-fixture", "text": "fixture response" },
+        "threadId": "thread-fixture",
+        "turnId": "turn-fixture"
+      }
+    },
+    { "method": "turn/completed", "params": { "threadId": "thread-fixture", "turn": { "id": "turn-fixture", "items": [], "status": "completed" } } },
+    { "method": "turn/completed", "params": { "threadId": "thread-fixture", "turn": { "id": "turn-fixture", "items": [], "status": "interrupted" } } },
+    { "method": "turn/completed", "params": { "threadId": "thread-fixture", "turn": { "id": "turn-fixture", "items": [], "status": "failed", "error": { "message": "fixture failure" } } } }
+  ],
+  "unknownNotification": { "method": "future/notification", "params": { "newField": true } }
+}

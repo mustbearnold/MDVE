@@ -9,7 +9,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, readdir, rename, stat, unlink } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { dirname, join, resolve, sep } from 'node:path';
+import { basename, dirname, join, resolve, sep } from 'node:path';
 
 export const DATA_SCHEMA_VERSION = 1;
 export const RECOVERY_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
@@ -195,24 +195,41 @@ export class AgentLeaseError extends Error {
   }
 }
 
+export class UnsupportedDataSchemaError extends Error {
+  name = 'UnsupportedDataSchemaError';
+
+  constructor(public readonly foundVersion: number, public readonly supportedVersion = DATA_SCHEMA_VERSION) {
+    super(
+      `MDVE data schema version ${foundVersion} is newer than supported version ${supportedVersion}; refusing to write this workspace. Upgrade MDVE before continuing.`,
+    );
+  }
+}
+
 type DurabilityFaultPoint =
   | 'temporary-create'
   | 'partial-write'
   | 'file-sync'
   | 'close'
   | 'rename'
+  | 'after-rename'
   | 'directory-sync'
   | 'cleanup';
 
-let faultInjector: ((point: DurabilityFaultPoint) => void) | undefined;
+let faultInjector: ((point: DurabilityFaultPoint, targetPath?: string) => void) | undefined;
 
 /** Test-only hook used by the fault-injection suite; production leaves it unset. */
-export function setDurabilityFaultInjector(injector?: (point: DurabilityFaultPoint) => void): void {
+export function setDurabilityFaultInjector(injector?: (point: DurabilityFaultPoint, targetPath?: string) => void): void {
   faultInjector = injector;
 }
 
-function fault(point: DurabilityFaultPoint): void {
-  faultInjector?.(point);
+function fault(point: DurabilityFaultPoint, targetPath?: string): void {
+  faultInjector?.(point, targetPath);
+  const requested = process.env.MDVE_DURABILITY_CRASH;
+  if (requested === point || (targetPath && requested === `${point}:${basename(targetPath)}`)) {
+    // Test-only subprocess hook. SIGKILL deliberately skips the write cleanup
+    // path so restart recovery proves what a process crash actually leaves on disk.
+    process.kill(process.pid, 'SIGKILL');
+  }
 }
 
 function metaPath(id: string): string {
@@ -273,28 +290,29 @@ async function writeAtomic(path: string, content: string): Promise<void> {
   const temporaryPath = `${path}.${randomUUID()}.tmp`;
   let renamed = false;
   try {
-    fault('temporary-create');
+    fault('temporary-create', path);
     const temporaryFile = await open(temporaryPath, 'wx');
     try {
-      fault('partial-write');
+      fault('partial-write', path);
       await temporaryFile.writeFile(content, 'utf8');
-      fault('file-sync');
+      fault('file-sync', path);
       await temporaryFile.sync();
     } finally {
       try {
-        fault('close');
+        fault('close', path);
       } finally {
         await temporaryFile.close();
       }
     }
 
-    fault('rename');
+    fault('rename', path);
     await rename(temporaryPath, path);
     renamed = true;
+    fault('after-rename', path);
 
     const parentDirectory = await open(dirname(path), 'r');
     try {
-      fault('directory-sync');
+      fault('directory-sync', path);
       await parentDirectory.sync();
     } finally {
       await parentDirectory.close();
@@ -302,7 +320,7 @@ async function writeAtomic(path: string, content: string): Promise<void> {
   } catch (error) {
     if (!renamed) {
       try {
-        fault('cleanup');
+        fault('cleanup', path);
         await unlink(temporaryPath);
       } catch {
         /* A failed cleanup is diagnosable on restart; never mask the write error. */
@@ -310,6 +328,26 @@ async function writeAtomic(path: string, content: string): Promise<void> {
     }
     throw error;
   }
+}
+
+async function removeAbandonedTemporaryFiles(root: string): Promise<number> {
+  let entries;
+  try {
+    entries = await readdir(root, { withFileTypes: true });
+  } catch {
+    return 0;
+  }
+
+  let removed = 0;
+  for (const entry of entries) {
+    const path = safePath(root, entry.name);
+    if (entry.isDirectory()) {
+      removed += await removeAbandonedTemporaryFiles(path);
+    } else if (entry.isFile() && entry.name.endsWith('.tmp')) {
+      await unlink(path).then(() => { removed += 1; }).catch(() => undefined);
+    }
+  }
+  return removed;
 }
 
 async function readJson<T>(path: string): Promise<T | null> {
@@ -327,7 +365,9 @@ async function writeMeta(meta: SessionMeta): Promise<void> {
 export async function readMeta(id: string): Promise<SessionMeta | null> {
   const parsed = await readJson<SessionMeta>(metaPath(id));
   if (!parsed || typeof parsed.id !== 'string' || typeof parsed.title !== 'string') return null;
-  return normalizeMeta(parsed as Pick<SessionMeta, 'id' | 'title' | 'createdAt' | 'updatedAt'> & Partial<SessionMeta>);
+  const meta = normalizeMeta(parsed as Pick<SessionMeta, 'id' | 'title' | 'createdAt' | 'updatedAt'> & Partial<SessionMeta>);
+  if (meta.schemaVersion > DATA_SCHEMA_VERSION) throw new UnsupportedDataSchemaError(meta.schemaVersion);
+  return meta;
 }
 
 async function readRevision(id: string): Promise<RevisionRecord | null> {
@@ -435,13 +475,42 @@ export async function readRecoveryPoint(id: string, pointId: string): Promise<{ 
   }
 }
 
+async function recoverDiagramForRevision(id: string, expectedChecksum: string): Promise<string | null> {
+  const candidate = (await readHistory(id)).find((point) => point.checksum === expectedChecksum);
+  if (!candidate || !/^[0-9a-f-]+\.mmd$/.test(candidate.file)) return null;
+  try {
+    const source = await readFile(safePath(historyDir(id), candidate.file), 'utf8');
+    if (checksum(source) !== expectedChecksum) return null;
+    await writeAtomic(diagramPath(id), source);
+    console.warn(`MDVE repaired an unacknowledged diagram write for ${id} from revision ${candidate.revision}`);
+    return source;
+  } catch {
+    return null;
+  }
+}
+
 async function ensureSessionState(id: string): Promise<SessionMeta | null> {
   const meta = await readMeta(id);
   if (!meta) return null;
-  const current = await readDiagram(id);
+  let current = await readDiagram(id);
   if (current === null) return null;
   const revision = await readRevision(id);
   if (revision) {
+    if (checksum(current) !== revision.checksum) {
+      const turn = meta.agentLease ? await readJson<AgentTurnRecord>(turnPath(id)) : null;
+      if (meta.agentLease && turn?.status === 'running') {
+        // An agent writes diagram.mmd directly while its lease is active. Keep
+        // that unacknowledged source visible until finishAgentTurn can reconcile
+        // it into the next durable revision; repairing it here would erase the
+        // agent's result before the completion boundary sees it.
+        return { ...meta, schemaVersion: DATA_SCHEMA_VERSION, revision: revision.revision, checksum: revision.checksum };
+      }
+      current = await recoverDiagramForRevision(id, revision.checksum);
+      if (current === null) {
+        console.error(`MDVE found an unrecoverable diagram/revision checksum mismatch for ${id}`);
+        return null;
+      }
+    }
     if (meta.revision !== revision.revision || meta.checksum !== revision.checksum || meta.schemaVersion !== DATA_SCHEMA_VERSION) {
       await writeMeta({
         ...meta,
@@ -908,6 +977,8 @@ export async function restoreSession(id: string): Promise<SessionMeta | null> {
 
 export async function ensureRoot(): Promise<void> {
   await mkdir(SESSIONS_DIR, { recursive: true });
+  const removed = await removeAbandonedTemporaryFiles(SESSIONS_DIR);
+  if (removed > 0) console.warn(`MDVE removed ${removed} abandoned temporary durability file(s) during recovery`);
   await recoverInterruptedTurns();
 }
 

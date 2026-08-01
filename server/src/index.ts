@@ -17,6 +17,7 @@ import {
   DEFAULT_DIAGRAM,
   AgentLeaseError,
   RevisionConflictError,
+  UnsupportedDataSchemaError,
   appendTurnTrace,
   beginAgentTurn,
   createSession,
@@ -95,9 +96,23 @@ function rejectInvalidLoopbackOrigin(req: express.Request, res: express.Response
 
 app.use(rejectInvalidLoopbackOrigin);
 
+function sendError(res: express.Response, error: unknown, fallbackStatus = 500): express.Response {
+  if (error instanceof UnsupportedDataSchemaError) {
+    return res.status(409).json({
+      error: error.message,
+      schemaVersion: error.foundVersion,
+      supportedSchemaVersion: error.supportedVersion,
+    });
+  }
+  return res.status(fallbackStatus).json({ error: error instanceof Error ? error.message : String(error) });
+}
+
 app.param('id', (_req, res, next, value) => {
   if (!isSafeIdentifier(value)) return res.status(400).json({ error: 'Invalid Diagram identifier' });
-  next();
+  void readMeta(value).then(() => next()).catch((error: unknown) => {
+    if (error instanceof UnsupportedDataSchemaError) return void sendError(res, error, 409);
+    next(error);
+  });
 });
 
 app.param('conversationId', (_req, res, next, value) => {
@@ -199,13 +214,21 @@ app.get('/api/sessions/:id/events', async (req, res) => {
 app.get('/api/sessions', async (req, res) => {
   const scope = req.query.scope === 'active' || req.query.scope === 'archived' ? req.query.scope : 'all';
   const search = typeof req.query.search === 'string' ? req.query.search : '';
-  res.json({ sessions: await listSessions(scope, search) });
+  try {
+    res.json({ sessions: await listSessions(scope, search) });
+  } catch (error) {
+    sendError(res, error, 409);
+  }
 });
 
 app.get('/api/startup', async (_req, res) => {
-  const sessions = await listSessions('active');
-  const session = sessions[0] ?? (await createSession());
-  res.json({ session });
+  try {
+    const sessions = await listSessions('active');
+    const session = sessions[0] ?? (await createSession());
+    res.json({ session });
+  } catch (error) {
+    sendError(res, error, 409);
+  }
 });
 
 app.get('/api/meta', async (_req, res) => {

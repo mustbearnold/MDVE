@@ -16,11 +16,11 @@ All external factual claims below link to the current official specification, do
 
 Call a build **MDVE v1** only when one immutable release candidate passes all eight blocking gates below and its evidence is attached to the release record. A local pass, an npm tarball, a successful production build, or a passing accessibility scanner is evidence for one part of the decision; none is a substitute for the complete set.
 
-### Status update — 2026-08-01
+### Status update — 2026-08-02
 
-The repository is public and the exact `master` candidate in the latest verified cycle has completed GitHub-hosted CI and CodeQL successfully. The candidate now includes the Codex app-server integration, Node 22/24 runtime gates, packaged browser/accessibility checks, artifact checks, lifecycle checks, reliability soak, and release-stability harness. That is technical candidate evidence, not a stable-publication decision: the manual WCAG/Orca record, registry install/signature and trusted-publishing evidence, qualified legal approval, a separately built previous-release rollback, and the remaining process-crash and fully authenticated Codex release-owner evidence are still release gates.
+The repository is public and the previous exact `master` candidate completed GitHub-hosted CI and CodeQL successfully. The current candidate adds the Codex app-server integration, generated protocol artifacts and negative initialization checks, Node 22/24 runtime gates, packaged browser/accessibility checks, browser draft reload/promotion and storage-failure checks, artifact checks, lifecycle checks, reliability soak, release-stability harness, dense-graph performance evidence, and Linux process-crash recovery evidence. The new candidate still needs its exact-head GitHub checks before delivery. This is technical candidate evidence, not a stable-publication decision: the manual WCAG/Orca record, registry install/signature and trusted-publishing evidence, qualified legal approval, a separately built previous-release rollback, and fully authenticated Codex release-owner evidence are still release gates.
 
-The performance harness currently proves the representative 100-node/2-edge editing fixture; the separate dense 200-node/300-edge opening budget remains unverified.
+The latest local Node 22.22.2/Chromium candidate run covers 20 cold and 20 warm openings of the dense 200-node/300-edge grid fixture: cold open p75/p95 620/635 ms and warm open p75/p95 710/733 ms, within the dense-render budget below. The raw dense TBT is retained as diagnostic evidence because Mermaid's synchronous layout is intentionally included in the measured render boundary.
 
 | Blocking gate | Required release evidence |
 | --- | --- |
@@ -98,7 +98,7 @@ Mermaid's official API distinguishes syntax validation through `mermaid.parse()`
 
 ### Honest boundary
 
-The current `writeAtomic()` sequence already writes and syncs a temporary file, renames it, and syncs its parent directory. Existing browser persistence tests cover ordering, independent Diagrams, retry, and flush-before-switch. They do not yet prove conditional revisions, atomic metadata/history transactions, fault points, browser drafts, process-crash recovery, or the full recovery ledger. Those missing cases remain blockers.
+The current `writeAtomic()` sequence writes and syncs a temporary file, renames it, and syncs its parent directory. The unit suite covers every atomic-write fault point, and `npm run test:process-crash` now kills the production server before rename, after canonical-file rename, and after revision-file rename before restarting the same `MDVE_HOME`; the restart accepts only an old or new checksummed revision and removes abandoned temporary files. The packaged browser suite now covers reload, stale-draft promotion, same-revision restoration, storage denial, quota failure, large-text/forced-colors/reduced-motion reflow, and the existing recovery workflow. A complete recovery ledger and manual release-owner record remain separate evidence requirements.
 
 ## 3. Accessibility gate
 
@@ -148,6 +148,7 @@ Google's current Core Web Vitals targets are LCP at or below 2.5 seconds, INP at
 | LCP | p75 <= 2.5 s | Initial packaged-app navigation on the reference Linux desktop |
 | CLS | p75 <= 0.1 | Initial load plus the exercised primary workflow |
 | TBT | p75 <= 200 ms | Repeatable Lighthouse lab proxy; never reported as INP |
+| Dense Diagram open | p95 <= 1.0 s | All 200 nodes visibly rendered from a 200-node/300-edge production-package fixture; 20 cold and 20 warm openings |
 | Scripted interaction latency | p75 <= 200 ms and p95 <= 500 ms | Actual editor, preview, library, history, and Conversation interactions; reported as lab interaction latency, not field INP |
 | Cold CLI-to-ready | p75 <= 2.0 s and p95 <= 3.0 s | `mdve` process start until authenticated loopback UI and API are usable, excluding opening an already-running browser process |
 | Edit-to-preview | p75 <= 200 ms and p95 <= 500 ms | Final input event until the representative 100-node flowchart is visibly updated |
@@ -157,6 +158,8 @@ Google's current Core Web Vitals targets are LCP at or below 2.5 seconds, INP at
 | Interrupt terminal state | p95 <= 2.0 s | Stop activation until app-server reports `interrupted` and MDVE closes the write lease on a local test turn |
 
 These numeric local-app budgets are MDVE product choices **[P]**, not W3C, Google, Vite, Node, or OpenAI requirements. They are deliberately measured with durable syncing enabled; disabling safety behavior to hit a latency target is not a valid pass.
+
+The dense-render budget is a separate product boundary from the ordinary initial-page TBT proxy. Dense raw TBT remains in the release record and is not silently relabeled as INP; the blocking dense signal is the time until all 200 nodes are visibly rendered.
 
 If MDVE later collects privacy-respecting real-user measurements, the formal Core Web Vitals judgment uses p75 field LCP/INP/CLS rather than the synthetic values above **[A]**. Until then, release notes must say “lab-tested against Core Web Vitals-aligned thresholds,” not “passes Core Web Vitals” **[I]**.
 
@@ -256,7 +259,7 @@ The same official lifecycle exposes:
 
 Unavailable-thread recovery and immutable provider binding are MDVE domain requirements **[P]**, not behaviors OpenAI promises. They are the safe product response to a failed provider operation **[I]**.
 
-The current `server/src/providers/codex.ts` cannot pass this gate: it reads private auth/model/config files, wraps `codex exec --json`, resumes through CLI flags, and maps Stop to `SIGTERM`. V1 requires the app-server adapter and the tests above; documenting the intended migration is not implementation evidence.
+The current `server/src/providers/codex.ts` now uses the app-server stdio adapter, performs version-gated initialization, discovers account/model state through app-server requests, and interrupts turns through `turn/interrupt`. The remaining release evidence is generated-schema validation against the exact supported runtime, initialization-negative-path coverage, and a release-owner run with a real authenticated Codex installation; the adapter migration alone is not evidence for those gates.
 
 ## 8. GitHub Actions and release-evidence gate
 

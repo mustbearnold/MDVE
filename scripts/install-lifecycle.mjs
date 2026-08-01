@@ -220,6 +220,21 @@ try {
   await stopChild(child);
   child = undefined;
 
+  const metaPath = join(dataRoot, 'sessions', snapshot.sessionId, 'session.json');
+  const supportedMeta = await readFile(metaPath, 'utf8');
+  const incompatibleMeta = { ...JSON.parse(supportedMeta), schemaVersion: 2 };
+  await writeFile(metaPath, `${JSON.stringify(incompatibleMeta, null, 2)}\n`, 'utf8');
+  const incompatibleRun = await startLauncher(launcher, env);
+  child = incompatibleRun.child;
+  const incompatibleResponse = await jsonRequest(`/api/sessions/${snapshot.sessionId}`, incompatibleRun.cookie, {}, 409);
+  assert.equal(incompatibleResponse.schemaVersion, 2);
+  assert.equal(incompatibleResponse.supportedSchemaVersion, 1);
+  assert.match(incompatibleResponse.error, /refusing to write/);
+  assert.equal(await readFile(metaPath, 'utf8'), `${JSON.stringify(incompatibleMeta, null, 2)}\n`, 'incompatible schema was rewritten');
+  await stopChild(child);
+  child = undefined;
+  await writeFile(metaPath, supportedMeta, 'utf8');
+
   run('npm', ['uninstall', '--global', '--prefix', prefix, packageJson.name]);
   assert.equal(await exists(launcher), false, 'uninstall left the mdve executable behind');
   assert.equal(await readFile(sentinel, 'utf8'), 'package lifecycle must not remove user data\n');
@@ -236,7 +251,10 @@ try {
     reinstallRetained: true,
     conversationRetained: true,
     historyRetained: true,
-    rollbackImplementation: 'same candidate bytes with package version metadata rewritten for lifecycle retention testing',
+    incompatibleSchemaReadOnly: true,
+    incompatibleSchemaVersion: 2,
+    previousStable: null,
+    rollbackImplementation: 'same candidate bytes with package version metadata rewritten for lifecycle retention testing; no separately published previous stable exists yet',
   };
   if (process.env.MDVE_LIFECYCLE_OUTPUT) {
     await writeFile(process.env.MDVE_LIFECYCLE_OUTPUT, `${JSON.stringify(evidence, null, 2)}\n`, 'utf8');

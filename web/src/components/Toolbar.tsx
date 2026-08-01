@@ -44,6 +44,7 @@ export function Toolbar(): JSX.Element {
   const future = useStore((s) => s.future);
   const saveStatus = useStore((s) => s.saveStatus);
   const draftStatus = useStore((s) => s.draftStatus);
+  const promoteDraft = useStore((s) => s.promoteDraft);
   const retrySave = useStore((s) => s.retrySave);
   const resolveConflict = useStore((s) => s.resolveConflict);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -159,7 +160,14 @@ export function Toolbar(): JSX.Element {
             <><span className="status-dot" />Saved · revision {revision}</>
           )}
         </span>
-        {draftStatus === 'available' && <span className="save-status save-saving">Recovery draft available</span>}
+        {draftStatus === 'available' && (
+          <span className="save-status save-saving">
+            Recovery draft available
+            <button className="save-retry" onClick={promoteDraft} title="Save the browser recovery draft as a new Diagram revision">
+              Use recovery draft
+            </button>
+          </span>
+        )}
         {draftStatus === 'degraded' && <span className="save-status save-error">Draft recovery unavailable</span>}
       </div>
 
