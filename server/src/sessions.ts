@@ -55,6 +55,17 @@ Rules:
   whole diagram back; the user can already see it.
 `;
 
+const SAFE_IDENTIFIER = /^[A-Za-z0-9_-]{1,128}$/;
+
+export function isSafeIdentifier(value: string): boolean {
+  return SAFE_IDENTIFIER.test(value);
+}
+
+function safeIdentifier(value: string): string {
+  if (!isSafeIdentifier(value)) throw new Error('Invalid MDVE identifier');
+  return value;
+}
+
 export type RevisionOrigin = 'manual' | 'import' | 'agent' | 'restore' | 'system';
 export type AgentTurnStatus = 'running' | 'completed' | 'stopped' | 'failed' | 'interrupted';
 
@@ -198,11 +209,11 @@ function fault(point: DurabilityFaultPoint): void {
 }
 
 function metaPath(id: string): string {
-  return join(SESSIONS_DIR, id, 'session.json');
+  return join(sessionDir(id), 'session.json');
 }
 
 function revisionPath(id: string): string {
-  return join(SESSIONS_DIR, id, 'revision.json');
+  return join(sessionDir(id), 'revision.json');
 }
 
 function historyDir(id: string): string {
@@ -218,7 +229,7 @@ function conversationsDir(id: string): string {
 }
 
 function conversationPath(sessionId: string, conversationId: string): string {
-  return join(conversationsDir(sessionId), `${conversationId}.json`);
+  return join(conversationsDir(sessionId), `${safeIdentifier(conversationId)}.json`);
 }
 
 function turnPath(id: string): string {
@@ -226,7 +237,7 @@ function turnPath(id: string): string {
 }
 
 export function sessionDir(id: string): string {
-  return join(SESSIONS_DIR, id);
+  return join(SESSIONS_DIR, safeIdentifier(id));
 }
 
 export function diagramPath(id: string): string {

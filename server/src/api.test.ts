@@ -63,6 +63,8 @@ test('authenticated API preserves revision, history, conversation, and archive c
     assert.equal(replay.status, 401);
     const invalidOrigin = await fetch(`${base}/api/sessions`, { headers: { cookie, origin: 'http://evil.example' } });
     assert.equal(invalidOrigin.status, 403);
+    const invalidDiagramId = await fetch(`${base}/api/sessions/not%2Fsafe`, { headers: { cookie } });
+    assert.equal(invalidDiagramId.status, 400);
 
     const startup = await fetch(`${base}/api/startup`, { headers: { cookie } });
     assert.equal(startup.status, 200);

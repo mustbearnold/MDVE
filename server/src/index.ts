@@ -44,6 +44,7 @@ import {
   updateMeta,
   updateConversation,
   writeDiagram,
+  isSafeIdentifier,
 } from './sessions.js';
 
 const PORT = Number(process.env.MDVE_PORT ?? process.env.PORT ?? 8787);
@@ -93,6 +94,16 @@ function rejectInvalidLoopbackOrigin(req: express.Request, res: express.Response
 }
 
 app.use(rejectInvalidLoopbackOrigin);
+
+app.param('id', (_req, res, next, value) => {
+  if (!isSafeIdentifier(value)) return res.status(400).json({ error: 'Invalid Diagram identifier' });
+  next();
+});
+
+app.param('conversationId', (_req, res, next, value) => {
+  if (!isSafeIdentifier(value)) return res.status(400).json({ error: 'Invalid Conversation identifier' });
+  next();
+});
 
 app.get('/_mdve/ready', (_req, res) => {
   res.json({ ok: true, version: VERSION });
