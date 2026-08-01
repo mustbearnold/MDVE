@@ -12,6 +12,8 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 export const DATA_SCHEMA_VERSION = 1;
+export const RECOVERY_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+export const MIN_RECOVERY_POINTS = 100;
 export let ROOT = process.env.MDVE_HOME ?? join(homedir(), '.mdve');
 export let SESSIONS_DIR = join(ROOT, 'sessions');
 export const DIAGRAM_FILE = 'diagram.mmd';
@@ -354,11 +356,34 @@ async function writeRecoveryPointFile(
     outcome,
   };
   await writeAtomic(join(historyDir(id), file), source);
+  const now = Date.now();
+  const cutoff = now - RECOVERY_RETENTION_MS;
+  const candidates = [...existing, point];
+  const keep = new Set(
+    candidates
+      .map((candidate, index) => ({ candidate, index }))
+      .sort(
+        (left, right) =>
+          right.candidate.createdAt - left.candidate.createdAt ||
+          right.candidate.revision - left.candidate.revision ||
+          right.index - left.index,
+      )
+      .slice(0, MIN_RECOVERY_POINTS)
+      .map(({ candidate }) => candidate.id),
+  );
+  for (const candidate of candidates) {
+    if (candidate.createdAt >= cutoff) keep.add(candidate.id);
+  }
+  const retained = candidates.filter((candidate) => keep.has(candidate.id));
   try {
-    await writeAtomic(historyManifestPath(id), JSON.stringify([...existing, point], null, 2));
+    await writeAtomic(historyManifestPath(id), JSON.stringify(retained, null, 2));
   } catch (error) {
     await markHistoryDegraded(id);
     throw error;
+  }
+  for (const candidate of candidates) {
+    if (keep.has(candidate.id) || candidate.file === file || !/^[0-9a-f-]+\.mmd$/.test(candidate.file)) continue;
+    await unlink(join(historyDir(id), candidate.file)).catch(() => undefined);
   }
   return point;
 }
@@ -516,7 +541,7 @@ export async function listSessions(scope: 'active' | 'archived' | 'all' = 'activ
 export async function writeDiagram(
   id: string,
   source: string,
-  opts: { expectedRevision?: number; origin?: RevisionOrigin; turnId?: string; allowDuringAgent?: boolean } = {},
+  opts: { expectedRevision?: number; origin?: RevisionOrigin; turnId?: string; allowDuringAgent?: boolean; forceRevision?: boolean } = {},
 ): Promise<SaveResult> {
   return withSessionLock(id, async () => {
     const meta = await ensureSessionState(id);
@@ -528,7 +553,7 @@ export async function writeDiagram(
     if (opts.expectedRevision !== undefined && opts.expectedRevision !== revision.revision) {
       throw new RevisionConflictError(opts.expectedRevision, revision.revision, current);
     }
-    if (current === source) return { revision: revision.revision, checksum: revision.checksum, origin: opts.origin ?? 'manual' };
+    if (current === source && !opts.forceRevision) return { revision: revision.revision, checksum: revision.checksum, origin: opts.origin ?? 'manual' };
 
     const next: RevisionRecord = {
       revision: revision.revision + 1,
@@ -630,7 +655,7 @@ export async function restoreRecoveryPoint(id: string, pointId: string): Promise
   const state = await getDiagramState(id);
   if (!state) throw new Error('Diagram durability state is unavailable');
   await writeRecoveryPointFile(id, state.source, state.revision, 'restore');
-  const result = await writeDiagram(id, point.source, { expectedRevision: state.revision, origin: 'restore' });
+  const result = await writeDiagram(id, point.source, { expectedRevision: state.revision, origin: 'restore', forceRevision: true });
   await writeRecoveryPointFile(id, point.source, result.revision, 'restore');
   return result;
 }

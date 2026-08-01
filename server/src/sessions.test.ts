@@ -45,23 +45,25 @@ test('durable revisions reject stale writers and preserve recovery points', asyn
   }
 });
 
-test('a failed directory sync does not acknowledge or expose a partial revision', async () => {
+test('every atomic-write fault point leaves the previous revision authoritative', async () => {
   const root = await mkdtemp(join(tmpdir(), 'mdve-fault-'));
   setDataRoot(root);
   try {
-    const session = await createSession({ source: 'flowchart TD\n  A --> B\n' });
-    let armed = true;
-    setDurabilityFaultInjector((point) => {
-      if (point === 'directory-sync' && armed) {
-        armed = false;
-        throw new Error('injected directory sync failure');
-      }
-    });
-    await assert.rejects(() => writeDiagram(session.id, 'flowchart LR\n  A --> C\n', { expectedRevision: 1 }));
-    setDurabilityFaultInjector();
-    const state = await getDiagramState(session.id);
-    assert.equal(state?.revision, 1);
-    assert.equal(state?.source, 'flowchart TD\n  A --> B\n');
+    for (const point of ['temporary-create', 'partial-write', 'file-sync', 'close', 'rename', 'directory-sync'] as const) {
+      const session = await createSession({ source: 'flowchart TD\n  A --> B\n' });
+      let armed = true;
+      setDurabilityFaultInjector((candidate) => {
+        if (candidate === point && armed) {
+          armed = false;
+          throw new Error(`injected ${point} failure`);
+        }
+      });
+      await assert.rejects(() => writeDiagram(session.id, 'flowchart LR\n  A --> C\n', { expectedRevision: 1 }));
+      setDurabilityFaultInjector();
+      const state = await getDiagramState(session.id);
+      assert.equal(state?.revision, 1, point);
+      assert.equal(state?.source, 'flowchart TD\n  A --> B\n', point);
+    }
   } finally {
     setDurabilityFaultInjector();
     await rm(root, { recursive: true, force: true });
@@ -105,7 +107,38 @@ test('restoring identical source records a visible lifecycle recovery point', as
     assert.equal(restored.revision, 3);
     const history = await readHistory(session.id);
     assert.ok(history.some((point) => point.revision === 3 && point.origin === 'restore'));
+    const restoredAgain = history.find((point) => point.revision === 3 && point.origin === 'restore');
+    assert.ok(restoredAgain);
+    assert.equal((await restoreRecoveryPoint(session.id, restoredAgain.id)).revision, 4);
   } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('history retains the newest 100 points after older points leave the 30-day window', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mdve-retention-'));
+  const realNow = Date.now;
+  const oldNow = realNow() - 31 * 24 * 60 * 60 * 1000;
+  setDataRoot(root);
+  try {
+    Date.now = () => oldNow;
+    const session = await createSession({ source: 'flowchart TD\n  A --> B\n' });
+    for (let index = 0; index < 120; index += 1) {
+      const state = await getDiagramState(session.id);
+      assert.ok(state);
+      await writeDiagram(session.id, `flowchart TD\n  A --> N${index}\n`, { expectedRevision: state.revision });
+      await createRecoveryPoint(session.id, 'manual');
+    }
+
+    Date.now = realNow;
+    await createRecoveryPoint(session.id, 'restore');
+    const history = await readHistory(session.id);
+    assert.equal(history.length, 100);
+    assert.equal(history.at(-1)?.origin, 'restore');
+    assert.ok(history.every((point) => point.revision >= 22));
+    assert.equal((await getDiagramState(session.id))?.source, 'flowchart TD\n  A --> N119\n');
+  } finally {
+    Date.now = realNow;
     await rm(root, { recursive: true, force: true });
   }
 });

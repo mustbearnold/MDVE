@@ -35,9 +35,14 @@
     "build": "npm run build:web && npm run build:server",
     "start": "NODE_ENV=production node dist/server/index.js",
     "prepack": "npm run build",
+    "test:e2e": "playwright test",
+    "test:e2e:installed": "node scripts/run-installed-e2e.mjs",
+    "test:performance:installed": "node scripts/run-installed-performance.mjs",
+    "test:install:lifecycle": "node scripts/install-lifecycle.mjs",
+    "test:reliability": "npm run build:server && node scripts/reliability-soak.mjs",
     "verify:artifact": "node scripts/check-release-artifact.mjs",
     "verify:licenses": "node scripts/check-production-licenses.mjs",
-    "test": "tsx --test server/src/api.test.ts server/src/sessions.test.ts web/src/components/WorkbenchTabs.test.ts web/src/mermaid/mutate.test.ts web/src/state/persistence.test.ts web/src/state/store.persistence.test.ts",
+    "test": "tsx --test server/src/api.test.ts server/src/sessions.test.ts server/src/providers/codex.test.ts web/src/components/WorkbenchTabs.test.ts web/src/mermaid/mutate.test.ts web/src/mermaid/corpus.test.ts web/src/state/persistence.test.ts web/src/state/store.persistence.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -46,10 +51,12 @@
     "express": "^4.21.2"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
     "@codemirror/commands": "^6.8.1",
     "@codemirror/language": "^6.11.0",
     "@codemirror/state": "^6.5.2",
     "@codemirror/view": "^6.36.8",
+    "@playwright/test": "^1.62.1",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/node": "^22.15.3",

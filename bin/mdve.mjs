@@ -4,6 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { execFileSync, spawn } from 'node:child_process';
 import { mkdir, unlink, writeFile, access } from 'node:fs/promises';
 import { createConnection } from 'node:net';
+import { createInterface } from 'node:readline';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -50,6 +51,90 @@ function codexVersion() {
   }
 }
 
+function supportedCodex(version) {
+  const match = version?.match(/(\d+)\.(\d+)\.(\d+)/);
+  return Boolean(match && Number(match[1]) === 0 && Number(match[2]) === 146);
+}
+
+async function codexStatus() {
+  const version = codexVersion();
+  if (!version) {
+    return { version: null, available: false, supported: false, authenticated: false, detail: `\`${CODEX_BIN}\` was not found on PATH` };
+  }
+  if (!supportedCodex(version)) {
+    return {
+      version,
+      available: true,
+      supported: false,
+      authenticated: false,
+      detail: `Codex ${version} is outside MDVE's tested range ${CODEX_RANGE}`,
+    };
+  }
+
+  return await new Promise((resolveStatus) => {
+    const child = spawn(CODEX_BIN, ['app-server', '--stdio'], {
+      env: process.env,
+      stdio: ['pipe', 'pipe', 'ignore'],
+    });
+    const lines = createInterface({ input: child.stdout });
+    let settled = false;
+    let timer;
+    const finish = (status) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      lines.close();
+      child.kill('SIGTERM');
+      resolveStatus({ version, available: true, supported: true, ...status });
+    };
+    const send = (message) => {
+      if (!child.stdin.destroyed) child.stdin.write(`${JSON.stringify(message)}\n`);
+    };
+
+    lines.on('line', (line) => {
+      if (!line.trim().startsWith('{')) return;
+      let message;
+      try {
+        message = JSON.parse(line);
+      } catch {
+        return;
+      }
+      if (message.id === 1) {
+        if (message.error) {
+          finish({ authenticated: false, detail: 'Codex app-server initialization failed' });
+          return;
+        }
+        send({ method: 'initialized' });
+        send({ id: 2, method: 'account/read', params: {} });
+      } else if (message.id === 2) {
+        const account = message.result?.account;
+        if (message.error) {
+          finish({ authenticated: false, detail: 'Codex authentication could not be checked through app-server' });
+        } else if (!account) {
+          finish({ authenticated: false, detail: 'Codex is not logged in. Run `codex login`, then retry.' });
+        } else if (account.type !== 'chatgpt') {
+          finish({ authenticated: false, detail: 'MDVE v1 requires a ChatGPT-authenticated Codex account.' });
+        } else {
+          finish({ authenticated: true, detail: `Codex ${version} · ChatGPT account` });
+        }
+      }
+    });
+    child.once('error', () => finish({ authenticated: false, detail: 'Codex app-server could not be started' }));
+    child.once('close', () => {
+      if (!settled) finish({ authenticated: false, detail: `Codex app-server is unavailable for ${version}` });
+    });
+    timer = setTimeout(() => finish({ authenticated: false, detail: `Codex app-server did not respond for ${version}` }), 5_000);
+    send({
+      id: 1,
+      method: 'initialize',
+      params: {
+        clientInfo: { name: 'mdve', title: 'MDVE', version: PACKAGE.version },
+        capabilities: { experimentalApi: false, requestAttestation: false },
+      },
+    });
+  });
+}
+
 async function dataDirectoryStatus({ create = false } = {}) {
   const root = process.env.MDVE_HOME ?? join(process.env.HOME ?? '', '.mdve');
   let probeRoot = root;
@@ -76,7 +161,7 @@ async function dataDirectoryStatus({ create = false } = {}) {
 
 async function doctor(json = false) {
   const data = await dataDirectoryStatus();
-  const version = codexVersion();
+  const codex = await codexStatus();
   const result = {
     mdveVersion: PACKAGE.version,
     node: process.versions.node,
@@ -87,8 +172,11 @@ async function doctor(json = false) {
     dataDirectory: data,
     codex: {
       binary: CODEX_BIN,
-      version,
-      available: Boolean(version),
+      version: codex.version,
+      available: codex.available,
+      supported: codex.supported,
+      authenticated: codex.authenticated,
+      detail: codex.detail,
       supportedRange: CODEX_RANGE,
       authentication: 'checked by the Codex app-server; credentials are not read by MDVE',
     },
@@ -101,10 +189,10 @@ async function doctor(json = false) {
     console.log(nodeRequirement());
     console.log(`Platform: ${process.platform}${result.supportedPlatform ? '' : ' (unsupported; Linux is required)'}`);
     console.log(`Data directory: ${data.path} (${data.writable ? 'writable' : `unwritable: ${data.detail}`})`);
-    console.log(`Codex: ${version ?? `not found (${CODEX_BIN})`} · supported range ${CODEX_RANGE}`);
+    console.log(`Codex: ${codex.detail} · supported range ${CODEX_RANGE}`);
     console.log(`Origin: ${result.origin}`);
   }
-  return supportedNode() && result.supportedPlatform && data.writable && Boolean(version) ? 0 : 1;
+  return supportedNode() && result.supportedPlatform && data.writable && codex.available && codex.supported && codex.authenticated ? 0 : 1;
 }
 
 function parsePort(args) {
@@ -133,7 +221,8 @@ async function start(args) {
   if (!(await portAvailable(DEFAULT_HOST, port))) {
     throw new Error(`MDVE cannot use http://${DEFAULT_HOST}:${port}; the port is occupied. Stop the process using it or pass an explicit --port.`);
   }
-  if (!codexVersion()) throw new Error(`Codex was not found on PATH (${CODEX_BIN}). Install and log in to Codex, then run mdve again.`);
+  const codex = await codexStatus();
+  if (!codex.available || !codex.supported || !codex.authenticated) throw new Error(`${codex.detail}. Install the supported Codex runtime, log in, then run mdve again.`);
   const data = await dataDirectoryStatus({ create: true });
   if (!data.writable) throw new Error(`MDVE data directory is not writable: ${data.path}\nFix the directory permissions, then run mdve again.`);
 

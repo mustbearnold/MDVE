@@ -35,18 +35,42 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install browser engines
+        run: npx playwright install --with-deps chromium firefox
+
       - name: Run release gates available in CI
         run: |
           npm test
           npm run typecheck
           npm run build
+          npm audit --omit=dev --audit-level=high
           npm run verify:licenses
+          npm run test:reliability
 
       - name: Build and inspect exact npm candidate
         run: |
           mkdir -p release
           npm pack --pack-destination release --json
-          npm run verify:artifact -- release/mdve-${npm_package_version}.tgz
+          VERSION=$(node -p "require('./package.json').version")
+          npm run verify:artifact -- "release/mdve-${VERSION}.tgz"
+
+      - name: Run packaged browser and accessibility tests
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          MDVE_E2E_ARCHIVE="release/mdve-${VERSION}.tgz" npm run test:e2e:installed
+
+      - name: Run packaged performance matrix
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          MDVE_E2E_ARCHIVE="release/mdve-${VERSION}.tgz" MDVE_PERFORMANCE_OUTPUT="release/performance.json" npm run test:performance:installed
+          cat release/performance.json
+
+      - name: Run packaged install lifecycle matrix
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          MDVE_E2E_ARCHIVE="release/mdve-${VERSION}.tgz" npm run test:install:lifecycle
 
       - name: Publish through npm trusted publishing
-        run: npm publish release/mdve-${npm_package_version}.tgz --access public --provenance
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          npm publish "release/mdve-${VERSION}.tgz" --access public --provenance
