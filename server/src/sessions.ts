@@ -9,7 +9,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, readdir, rename, stat, unlink } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 
 export const DATA_SCHEMA_VERSION = 1;
 export const RECOVERY_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
@@ -64,6 +64,13 @@ export function isSafeIdentifier(value: string): boolean {
 function safeIdentifier(value: string): string {
   if (!isSafeIdentifier(value)) throw new Error('Invalid MDVE identifier');
   return value;
+}
+
+function safePath(root: string, child: string): string {
+  const normalizedRoot = resolve(root);
+  const candidate = resolve(normalizedRoot, child);
+  if (!candidate.startsWith(`${normalizedRoot}${sep}`)) throw new Error('Invalid MDVE path');
+  return candidate;
 }
 
 export type RevisionOrigin = 'manual' | 'import' | 'agent' | 'restore' | 'system';
@@ -209,39 +216,39 @@ function fault(point: DurabilityFaultPoint): void {
 }
 
 function metaPath(id: string): string {
-  return join(sessionDir(id), 'session.json');
+  return safePath(sessionDir(id), 'session.json');
 }
 
 function revisionPath(id: string): string {
-  return join(sessionDir(id), 'revision.json');
+  return safePath(sessionDir(id), 'revision.json');
 }
 
 function historyDir(id: string): string {
-  return join(sessionDir(id), 'history');
+  return safePath(sessionDir(id), 'history');
 }
 
 function historyManifestPath(id: string): string {
-  return join(historyDir(id), 'index.json');
+  return safePath(historyDir(id), 'index.json');
 }
 
 function conversationsDir(id: string): string {
-  return join(sessionDir(id), 'conversations');
+  return safePath(sessionDir(id), 'conversations');
 }
 
 function conversationPath(sessionId: string, conversationId: string): string {
-  return join(conversationsDir(sessionId), `${safeIdentifier(conversationId)}.json`);
+  return safePath(conversationsDir(sessionId), `${safeIdentifier(conversationId)}.json`);
 }
 
 function turnPath(id: string): string {
-  return join(sessionDir(id), 'turn.json');
+  return safePath(sessionDir(id), 'turn.json');
 }
 
 export function sessionDir(id: string): string {
-  return join(SESSIONS_DIR, safeIdentifier(id));
+  return safePath(SESSIONS_DIR, safeIdentifier(id));
 }
 
 export function diagramPath(id: string): string {
-  return join(sessionDir(id), DIAGRAM_FILE);
+  return safePath(sessionDir(id), DIAGRAM_FILE);
 }
 
 function checksum(source: string): string {
@@ -366,7 +373,7 @@ async function writeRecoveryPointFile(
     turnId,
     outcome,
   };
-  await writeAtomic(join(historyDir(id), file), source);
+  await writeAtomic(safePath(historyDir(id), file), source);
   const now = Date.now();
   const cutoff = now - RECOVERY_RETENTION_MS;
   const candidates = [...existing, point];
@@ -394,7 +401,7 @@ async function writeRecoveryPointFile(
   }
   for (const candidate of candidates) {
     if (keep.has(candidate.id) || candidate.file === file || !/^[0-9a-f-]+\.mmd$/.test(candidate.file)) continue;
-    await unlink(join(historyDir(id), candidate.file)).catch(() => undefined);
+    await unlink(safePath(historyDir(id), candidate.file)).catch(() => undefined);
   }
   return point;
 }
@@ -420,7 +427,7 @@ export async function readRecoveryPoint(id: string, pointId: string): Promise<{ 
   const point = (await readHistory(id)).find((candidate) => candidate.id === pointId);
   if (!point || !/^[0-9a-f-]+\.mmd$/.test(point.file)) return null;
   try {
-    const source = await readFile(join(historyDir(id), point.file), 'utf8');
+    const source = await readFile(safePath(historyDir(id), point.file), 'utf8');
     if (checksum(source) !== point.checksum) throw new Error('checksum mismatch');
     return { point, source };
   } catch {
@@ -491,7 +498,7 @@ export async function updateMeta(id: string, patch: Partial<SessionMeta>): Promi
 
 /** Keeps the agent brief current, including in workspaces created by older builds. */
 export async function ensureAgentsFile(id: string): Promise<void> {
-  const path = join(sessionDir(id), 'AGENTS.md');
+  const path = safePath(sessionDir(id), 'AGENTS.md');
   try {
     if ((await readFile(path, 'utf8')) === AGENTS_MD) return;
   } catch {
@@ -507,7 +514,7 @@ export async function createSession(opts: { title?: string; source?: string } = 
   const source = opts.source ?? DEFAULT_DIAGRAM;
   const now = Date.now();
   const initial: RevisionRecord = { revision: 1, checksum: checksum(source), updatedAt: now, origin: 'system' };
-  await writeAtomic(join(dir, DIAGRAM_FILE), source);
+  await writeAtomic(safePath(dir, DIAGRAM_FILE), source);
   await writeRevision(id, initial);
   await ensureAgentsFile(id);
   await writeRecoveryPointFile(id, source, initial.revision, 'system');
@@ -640,7 +647,7 @@ export async function reconcileDiagram(id: string, origin: RevisionOrigin = 'age
 /** Compatibility helper retained for callers that need a pre-agent checkpoint. */
 export async function snapshotDiagram(id: string): Promise<string | null> {
   const point = await createRecoveryPoint(id, 'agent');
-  return point ? join(historyDir(id), point.file) : null;
+  return point ? safePath(historyDir(id), point.file) : null;
 }
 
 export async function createRecoveryPoint(
@@ -678,7 +685,7 @@ export async function listConversations(sessionId: string): Promise<Conversation
     const records: ConversationRecord[] = [];
     for (const entry of entries) {
       if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
-      const record = await readJson<ConversationRecord>(join(conversationsDir(sessionId), entry.name));
+      const record = await readJson<ConversationRecord>(safePath(conversationsDir(sessionId), entry.name));
       if (record) records.push(record);
     }
     return records.sort((a, b) => b.updatedAt - a.updatedAt);
