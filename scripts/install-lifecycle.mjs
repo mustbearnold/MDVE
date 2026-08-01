@@ -54,15 +54,16 @@ async function stopChild(child) {
 async function startLauncher(launcher, env) {
   const child = spawn(launcher, ['--no-open'], { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] });
   let output = '';
+  const bootstrapPattern = /_auth\/bootstrap\?token=([0-9a-f]+)/;
   child.stdout.on('data', (chunk) => { output += chunk.toString(); });
   child.stderr.on('data', (chunk) => { output += chunk.toString(); });
   const deadline = Date.now() + 15_000;
-  while (!output.includes('MDVE is ready at') && Date.now() < deadline) {
+  while (!bootstrapPattern.test(output) && Date.now() < deadline) {
     if (child.exitCode !== null) throw new Error(`launcher exited before ready: ${output}`);
     await new Promise((resolveWait) => setTimeout(resolveWait, 50));
   }
   assert.match(output, new RegExp(`MDVE is ready at http://127\\.0\\.0\\.1:${port}`));
-  const token = output.match(/_auth\/bootstrap\?token=([0-9a-f]+)/)?.[1];
+  const token = output.match(bootstrapPattern)?.[1];
   assert.ok(token, 'launcher did not expose a bootstrap token');
   const bootstrap = await fetch(`${origin}/_auth/bootstrap?token=${token}`, { redirect: 'manual' });
   assert.equal(bootstrap.status, 302);
