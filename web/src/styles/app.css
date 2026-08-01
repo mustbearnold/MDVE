@@ -244,6 +244,11 @@ button.danger:hover:not(:disabled) {
   flex: 1 1 260px;
 }
 
+.library-scope {
+  min-width: 118px;
+  flex: 0 1 150px;
+}
+
 .diagram-search {
   width: 150px;
   min-width: 110px;
@@ -1123,6 +1128,11 @@ button.danger:hover:not(:disabled) {
     width: 100%;
     min-width: 0;
     max-width: none;
+  }
+
+  .library-scope {
+    min-width: 0;
+    flex: 0 1 118px;
   }
 
   .diagram-search {

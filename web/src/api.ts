@@ -9,6 +9,9 @@ export interface SessionMeta {
   checksum?: string;
   archived?: boolean;
   trashed?: boolean;
+  trashedAt?: number;
+  lastLifecycleAction?: { action: 'new' | 'archive' | 'restore' | 'trash' | 'permanent-delete'; origin: 'user' | 'agent' | 'system'; at: number };
+  sourceSummary?: string;
   historyDegraded?: boolean;
   selectedConversationId?: string;
   agentLease?: { turnId: string; conversationId: string; startedAt: number };
@@ -75,7 +78,7 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  listSessions: (scope: 'active' | 'archived' | 'all' = 'all', search = '') => {
+  listSessions: (scope: 'recent' | 'active' | 'archived' | 'all' | 'trash' = 'all', search = '') => {
     const params = new URLSearchParams();
     if (scope !== 'all') params.set('scope', scope);
     if (search) params.set('search', search);
@@ -83,7 +86,10 @@ export const api = {
     return req<{ sessions: SessionMeta[] }>(`/api/sessions${query ? `?${query}` : ''}`);
   },
 
-  startup: () => req<{ session: SessionMeta }>('/api/startup'),
+  startup: (selectedId?: string) => {
+    const query = selectedId ? `?selectedId=${encodeURIComponent(selectedId)}` : '';
+    return req<{ session: SessionMeta }>(`/api/startup${query}`);
+  },
 
   createSession: (title?: string) =>
     req<{ session: SessionMeta }>('/api/sessions', {
@@ -144,6 +150,12 @@ export const api = {
 
   restoreSession: (id: string) =>
     req<{ session: SessionMeta }>(`/api/sessions/${id}/restore`, { method: 'POST' }),
+
+  trashSession: (id: string) =>
+    req<{ session: SessionMeta }>(`/api/sessions/${id}/trash`, { method: 'POST' }),
+
+  permanentlyDeleteSession: (id: string) =>
+    req<{ ok: true }>(`/api/sessions/${id}`, { method: 'DELETE' }),
 
   providers: () => req<{ providers: ProviderInfo[] }>('/api/providers'),
 

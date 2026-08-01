@@ -17,6 +17,13 @@ import {
   setDataRoot,
   setDurabilityFaultInjector,
   writeDiagram,
+  listSessions,
+  archiveSession,
+  restoreSession,
+  trashSession,
+  permanentlyDeleteSession,
+  latestOrCreate,
+  sessionExists,
   RevisionConflictError,
   beginAgentTurn,
   restoreRecoveryPoint,
@@ -220,6 +227,47 @@ test('history retains the newest 100 points after older points leave the 30-day 
     assert.equal((await getDiagramState(session.id))?.source, 'flowchart TD\n  A --> N119\n');
   } finally {
     Date.now = realNow;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('library scopes keep archive reversible and require Trash before permanent deletion', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mdve-library-'));
+  setDataRoot(root);
+  try {
+    const first = await createSession({ title: 'First diagram' });
+    const second = await createSession({ title: 'Second diagram' });
+
+    await archiveSession(first.id);
+    assert.equal((await listSessions('recent')).some((session) => session.id === first.id), false);
+    assert.equal((await listSessions('archived')).some((session) => session.id === first.id), true);
+    await restoreSession(first.id);
+    assert.equal((await listSessions('recent')).some((session) => session.id === first.id), true);
+
+    await trashSession(first.id);
+    assert.equal((await listSessions('all')).some((session) => session.id === first.id), false);
+    const trashed = (await listSessions('trash')).find((session) => session.id === first.id);
+    assert.equal(trashed?.trashed, true);
+    assert.ok(trashed?.trashedAt);
+    assert.equal(trashed?.lastLifecycleAction?.action, 'trash');
+
+    await assert.rejects(() => permanentlyDeleteSession(second.id), /Only trashed Diagrams/);
+    await permanentlyDeleteSession(first.id);
+    assert.equal(await sessionExists(first.id), false);
+    assert.equal((await listSessions('trash')).some((session) => session.id === first.id), false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('concurrent empty startup requests create exactly one starter Diagram', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mdve-startup-'));
+  setDataRoot(root);
+  try {
+    const sessions = await Promise.all(Array.from({ length: 12 }, () => latestOrCreate()));
+    assert.equal(new Set(sessions.map((session) => session.id)).size, 1);
+    assert.equal((await listSessions('active')).length, 1);
+  } finally {
     await rm(root, { recursive: true, force: true });
   }
 });

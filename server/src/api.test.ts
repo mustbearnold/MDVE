@@ -140,6 +140,22 @@ test('authenticated API preserves revision, history, conversation, and archive c
     assert.equal((await active.json()).sessions.length, 0);
     const restored = await fetch(`${base}/api/sessions/${starter.id}/restore`, { method: 'POST', headers: { cookie } });
     assert.equal(restored.status, 200);
+    const activeDelete = await fetch(`${base}/api/sessions/${starter.id}`, { method: 'DELETE', headers: { cookie } });
+    assert.equal(activeDelete.status, 409);
+
+    const trashed = await fetch(`${base}/api/sessions/${starter.id}/trash`, { method: 'POST', headers: { cookie } });
+    assert.equal(trashed.status, 200);
+    const trashScope = await fetch(`${base}/api/sessions?scope=trash`, { headers: { cookie } });
+    assert.equal((await trashScope.json()).sessions.length, 1);
+
+    const restoredFromTrash = await fetch(`${base}/api/sessions/${starter.id}/restore`, { method: 'POST', headers: { cookie } });
+    assert.equal(restoredFromTrash.status, 200);
+    const trashedAgain = await fetch(`${base}/api/sessions/${starter.id}/trash`, { method: 'POST', headers: { cookie } });
+    assert.equal(trashedAgain.status, 200);
+    const deleted = await fetch(`${base}/api/sessions/${starter.id}`, { method: 'DELETE', headers: { cookie } });
+    assert.equal(deleted.status, 200);
+    const missing = await fetch(`${base}/api/sessions/${starter.id}`, { headers: { cookie } });
+    assert.equal(missing.status, 404);
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
     await rm(dataRoot, { recursive: true, force: true });

@@ -3,7 +3,7 @@ import { useRef, type RefObject } from 'react';
 import { addNode } from '../mermaid/mutate';
 import { setDirection } from '../mermaid/mutate';
 import { supportsStructuredEditing } from '../mermaid/parse';
-import { useStore } from '../state/store';
+import { useStore, type LibraryScope } from '../state/store';
 import { Icon } from './Icon';
 
 const DIRECTIONS = [
@@ -31,6 +31,8 @@ export function Toolbar(): JSX.Element {
   const session = useStore((s) => s.session);
   const revision = useStore((s) => s.revision);
   const sessions = useStore((s) => s.sessions);
+  const libraryScope = useStore((s) => s.libraryScope);
+  const setLibraryScope = useStore((s) => s.setLibraryScope);
   const librarySearch = useStore((s) => s.librarySearch);
   const setLibrarySearch = useStore((s) => s.setLibrarySearch);
   const loadSession = useStore((s) => s.loadSession);
@@ -38,6 +40,8 @@ export function Toolbar(): JSX.Element {
   const renameSession = useStore((s) => s.renameSession);
   const archiveSession = useStore((s) => s.archiveSession);
   const restoreSession = useStore((s) => s.restoreSession);
+  const trashSession = useStore((s) => s.trashSession);
+  const permanentlyDeleteSession = useStore((s) => s.permanentlyDeleteSession);
   const undo = useStore((s) => s.undo);
   const redo = useStore((s) => s.redo);
   const past = useStore((s) => s.past);
@@ -50,7 +54,7 @@ export function Toolbar(): JSX.Element {
   const fileRef = useRef<HTMLInputElement>(null);
   const diagramMenuRef = useRef<HTMLDetailsElement>(null);
   const fileMenuRef = useRef<HTMLDetailsElement>(null);
-  const structuredEditingAvailable = supportsStructuredEditing(diagram, renderError);
+  const structuredEditingAvailable = supportsStructuredEditing(diagram, renderError) && !session?.archived && !session?.trashed && !session?.agentLease;
 
   const closeMenu = (ref: RefObject<HTMLDetailsElement | null>) => {
     if (ref.current) ref.current.open = false;
@@ -110,6 +114,17 @@ export function Toolbar(): JSX.Element {
           Diagram
         </label>
         <select
+          className="library-scope"
+          aria-label="Diagram library"
+          value={libraryScope}
+          onChange={(event) => setLibraryScope(event.target.value as LibraryScope)}
+        >
+          <option value="recent">Recent</option>
+          <option value="all">All diagrams</option>
+          <option value="archived">Archived</option>
+          <option value="trash">Trash</option>
+        </select>
+        <select
           className="diagram-select"
           id="diagram-select"
           value={session?.id ?? ''}
@@ -117,8 +132,12 @@ export function Toolbar(): JSX.Element {
           title="Open diagram"
         >
           {sessions.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.title}{s.archived ? ' (archived)' : ''}
+            <option
+              key={s.id}
+              value={s.id}
+              title={[s.sourceSummary, s.lastActivityAt ? `Last activity ${new Date(s.lastActivityAt).toLocaleString()}` : undefined, s.historyDegraded ? 'Recovery history unavailable' : undefined].filter(Boolean).join(' · ')}
+            >
+              {s.title}{s.archived ? ' (archived)' : ''}{s.trashed ? ' (Trash)' : ''}
             </option>
           ))}
         </select>
@@ -219,7 +238,7 @@ export function Toolbar(): JSX.Element {
           >
             New diagram
           </button>
-          {session?.archived ? (
+          {session?.trashed ? (
             <button
               onClick={() => {
                 closeMenu(diagramMenuRef);
@@ -229,13 +248,44 @@ export function Toolbar(): JSX.Element {
               Restore diagram
             </button>
           ) : (
+            <>
+              {session?.archived ? (
+                <button
+                  onClick={() => {
+                    closeMenu(diagramMenuRef);
+                    void restoreSession();
+                  }}
+                >
+                  Restore diagram
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    closeMenu(diagramMenuRef);
+                    void archiveSession();
+                  }}
+                >
+                  Archive diagram
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  closeMenu(diagramMenuRef);
+                  if (window.confirm('Move this diagram to Trash? It will remain recoverable until permanently deleted.')) void trashSession();
+                }}
+              >
+                Move diagram to Trash
+              </button>
+            </>
+          )}
+          {session?.trashed && (
             <button
               onClick={() => {
                 closeMenu(diagramMenuRef);
-                void archiveSession();
+                if (window.confirm('Permanently delete this diagram and its recovery history? This cannot be undone.')) void permanentlyDeleteSession();
               }}
             >
-              Archive diagram
+              Delete diagram permanently
             </button>
           )}
           <button

@@ -71,7 +71,7 @@ test('switching Diagrams flushes the current edit before loading the target', as
         workspace: '/tmp/bravo',
       });
     }
-    if (path === '/api/sessions') return Response.json({ sessions: [session('alpha'), session('bravo')] });
+    if (path === '/api/sessions' || path === '/api/sessions?scope=recent') return Response.json({ sessions: [session('alpha'), session('bravo')] });
     throw new Error(`Unexpected request: ${path}`);
   }) as typeof fetch;
 

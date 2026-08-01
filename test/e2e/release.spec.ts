@@ -61,6 +61,38 @@ test('the packaged browser workflow edits, saves, previews, exports, and restore
   await waitForSaved(page, 3);
 });
 
+test('the diagram library exposes Recent, Archived, and recoverable Trash scopes', async ({ page }) => {
+  const menu = page.locator('summary').filter({ hasText: 'Diagram' });
+  await menu.click();
+  await page.getByRole('button', { name: 'New diagram' }).click();
+  await waitForSaved(page, 1);
+
+  await menu.click();
+  await page.getByRole('button', { name: 'Archive diagram' }).click();
+  await expect(page.locator('#diagram-select')).toHaveValue(/.+/);
+
+  await page.getByLabel('Diagram library').selectOption('archived');
+  await expect(page.locator('#diagram-select option').filter({ hasText: 'Untitled diagram (archived)' })).toHaveCount(1);
+  const archivedId = await page.locator('#diagram-select option').filter({ hasText: 'Untitled diagram (archived)' }).getAttribute('value');
+  expect(archivedId).toBeTruthy();
+  await page.locator('#diagram-select').selectOption(archivedId!);
+  await menu.click();
+  await expect(page.getByRole('button', { name: 'Restore diagram' })).toBeVisible();
+  await page.getByRole('button', { name: 'Restore diagram' }).click();
+
+  await menu.click();
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Move diagram to Trash' }).click();
+  await page.getByLabel('Diagram library').selectOption('trash');
+  await expect(page.locator('#diagram-select option').filter({ hasText: 'Untitled diagram (Trash)' })).toHaveCount(1);
+  const trashedId = await page.locator('#diagram-select option').filter({ hasText: 'Untitled diagram (Trash)' }).getAttribute('value');
+  expect(trashedId).toBeTruthy();
+  await page.locator('#diagram-select').selectOption(trashedId!);
+  await menu.click();
+  await expect(page.getByRole('button', { name: 'Delete diagram permanently' })).toBeVisible();
+  await expect(page.locator('.cm-content')).toHaveAttribute('contenteditable', 'false');
+});
+
 test('durable conversations and every workbench state have accessible names', async ({ page }) => {
   for (const view of ['Preview', 'Source', 'Inspector', 'Agent', 'History']) {
     await page.getByRole('button', { name: view, exact: true }).click();

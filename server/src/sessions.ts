@@ -7,7 +7,7 @@
  */
 
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, open, readFile, readdir, rename, stat, unlink } from 'node:fs/promises';
+import { mkdir, open, readFile, readdir, rename, rm, stat, unlink } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 
@@ -75,6 +75,14 @@ function safePath(root: string, child: string): string {
 
 export type RevisionOrigin = 'manual' | 'import' | 'agent' | 'restore' | 'system';
 export type AgentTurnStatus = 'running' | 'completed' | 'stopped' | 'failed' | 'interrupted';
+export type LifecycleOrigin = 'user' | 'agent' | 'system';
+export type LifecycleAction = 'new' | 'archive' | 'restore' | 'trash' | 'permanent-delete';
+
+export interface LifecycleRecord {
+  action: LifecycleAction;
+  origin: LifecycleOrigin;
+  at: number;
+}
 
 export interface AgentLease {
   turnId: string;
@@ -93,6 +101,10 @@ export interface SessionMeta {
   checksum: string;
   archived?: boolean;
   trashed?: boolean;
+  trashedAt?: number;
+  lastLifecycleAction?: LifecycleRecord;
+  /** Derived for library rows; it is intentionally not persisted in session.json. */
+  sourceSummary?: string;
   historyDegraded?: boolean;
   selectedConversationId?: string;
   agentLease?: AgentLease;
@@ -576,7 +588,7 @@ export async function ensureAgentsFile(id: string): Promise<void> {
   await writeAtomic(path, AGENTS_MD);
 }
 
-export async function createSession(opts: { title?: string; source?: string } = {}): Promise<SessionMeta> {
+export async function createSession(opts: { title?: string; source?: string; origin?: LifecycleOrigin } = {}): Promise<SessionMeta> {
   const id = randomUUID();
   const dir = sessionDir(id);
   await mkdir(dir, { recursive: true });
@@ -597,12 +609,15 @@ export async function createSession(opts: { title?: string; source?: string } = 
     revision: initial.revision,
     checksum: initial.checksum,
     historyDegraded: false,
+    lastLifecycleAction: { action: 'new', origin: opts.origin ?? 'user', at: now },
   });
   await writeMeta(meta);
   return meta;
 }
 
-export async function listSessions(scope: 'active' | 'archived' | 'all' = 'active', search = ''): Promise<SessionMeta[]> {
+export type SessionScope = 'recent' | 'active' | 'archived' | 'all' | 'trash';
+
+export async function listSessions(scope: SessionScope = 'active', search = ''): Promise<SessionMeta[]> {
   await mkdir(SESSIONS_DIR, { recursive: true });
   const entries = await readdir(SESSIONS_DIR, { withFileTypes: true });
   const metas: SessionMeta[] = [];
@@ -614,12 +629,19 @@ export async function listSessions(scope: 'active' | 'archived' | 'all' = 'activ
   const needle = search.trim().toLocaleLowerCase();
   const matching = [] as SessionMeta[];
   for (const meta of metas) {
-    if (meta.trashed || (scope !== 'all' && (scope === 'archived' ? !meta.archived : meta.archived))) continue;
+    if (scope === 'trash') {
+      if (!meta.trashed) continue;
+    } else {
+      if (meta.trashed) continue;
+      if (scope === 'archived' && !meta.archived) continue;
+      if ((scope === 'active' || scope === 'recent') && meta.archived) continue;
+    }
+    const source = (await readDiagram(meta.id)) ?? '';
     if (needle) {
-      const source = (await readDiagram(meta.id)) ?? '';
       if (!meta.title.toLocaleLowerCase().includes(needle) && !source.toLocaleLowerCase().includes(needle)) continue;
     }
-    matching.push(meta);
+    const summary = source.split('\n').find((line) => line.trim() && !line.trim().startsWith('%%'))?.trim() ?? 'Empty Mermaid source';
+    matching.push({ ...meta, sourceSummary: summary.slice(0, 96) });
   }
   return matching
     .sort((a, b) => b.lastActivityAt - a.lastActivityAt);
@@ -959,20 +981,79 @@ export async function recoverInterruptedTurns(): Promise<void> {
   }
 }
 
-export async function archiveSession(id: string): Promise<SessionMeta | null> {
+export async function archiveSession(id: string, origin: LifecycleOrigin = 'user'): Promise<SessionMeta | null> {
   return withSessionLock(id, async () => {
     const meta = await ensureSessionState(id);
     if (!meta) return null;
     if (meta.agentLease) throw new AgentLeaseError(meta.agentLease);
+    if (meta.trashed) throw new Error('A trashed Diagram must be restored before it can be archived');
     await createRecoveryPoint(id, 'manual');
-    const next = normalizeMeta({ ...meta, archived: true, updatedAt: Date.now(), lastActivityAt: meta.lastActivityAt });
+    const now = Date.now();
+    const next = normalizeMeta({
+      ...meta,
+      archived: true,
+      updatedAt: now,
+      lastActivityAt: meta.lastActivityAt,
+      lastLifecycleAction: { action: 'archive', origin, at: now },
+    });
     await writeMeta(next);
     return next;
   });
 }
 
-export async function restoreSession(id: string): Promise<SessionMeta | null> {
-  return updateMeta(id, { archived: false, trashed: false });
+export async function trashSession(id: string, origin: LifecycleOrigin = 'user'): Promise<SessionMeta | null> {
+  return withSessionLock(id, async () => {
+    const meta = await ensureSessionState(id);
+    if (!meta) return null;
+    if (meta.agentLease) throw new AgentLeaseError(meta.agentLease);
+    await createRecoveryPoint(id, 'manual');
+    const now = Date.now();
+    const next = normalizeMeta({
+      ...meta,
+      archived: false,
+      trashed: true,
+      trashedAt: now,
+      updatedAt: now,
+      lastActivityAt: meta.lastActivityAt,
+      lastLifecycleAction: { action: 'trash', origin, at: now },
+    });
+    await writeMeta(next);
+    return next;
+  });
+}
+
+export async function restoreSession(id: string, origin: LifecycleOrigin = 'user'): Promise<SessionMeta | null> {
+  return withSessionLock(id, async () => {
+    const meta = await ensureSessionState(id);
+    if (!meta) return null;
+    if (meta.agentLease) throw new AgentLeaseError(meta.agentLease);
+    const now = Date.now();
+    const next = normalizeMeta({
+      ...meta,
+      archived: false,
+      trashed: false,
+      trashedAt: undefined,
+      updatedAt: now,
+      lastActivityAt: meta.lastActivityAt,
+      lastLifecycleAction: { action: 'restore', origin, at: now },
+    });
+    await writeMeta(next);
+    return next;
+  });
+}
+
+/** Permanent deletion is deliberately only callable after a Diagram entered Trash. */
+export async function permanentlyDeleteSession(id: string, origin: LifecycleOrigin = 'user'): Promise<boolean> {
+  return withSessionLock(id, async () => {
+    const meta = await ensureSessionState(id);
+    if (!meta) return false;
+    if (!meta.trashed) throw new Error('Only trashed Diagrams can be permanently deleted');
+    if (meta.agentLease) throw new AgentLeaseError(meta.agentLease);
+    // The path is derived from a validated identifier and scoped below SESSIONS_DIR.
+    await rm(sessionDir(id), { recursive: true, force: false });
+    void origin;
+    return true;
+  });
 }
 
 export async function ensureRoot(): Promise<void> {
@@ -983,10 +1064,24 @@ export async function ensureRoot(): Promise<void> {
 }
 
 /** Most recent session, creating one when the store is empty. */
-export async function latestOrCreate(): Promise<SessionMeta> {
-  const sessions = await listSessions('active');
-  if (sessions.length > 0) return sessions[0];
-  return createSession();
+let startupOperation: Promise<SessionMeta> | undefined;
+
+export async function latestOrCreate(selectedId?: string): Promise<SessionMeta> {
+  if (startupOperation) return startupOperation;
+  startupOperation = (async () => {
+    if (selectedId && isSafeIdentifier(selectedId)) {
+      const selected = await ensureSessionState(selectedId);
+      if (selected && !selected.archived && !selected.trashed) return selected;
+    }
+    const sessions = await listSessions('active');
+    if (sessions.length > 0) return sessions[0];
+    return createSession({ origin: 'system' });
+  })();
+  try {
+    return await startupOperation;
+  } finally {
+    startupOperation = undefined;
+  }
 }
 
 export async function sessionExists(id: string): Promise<boolean> {

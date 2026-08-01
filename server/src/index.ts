@@ -40,6 +40,9 @@ import {
   restoreRecoveryPoint,
   archiveSession,
   restoreSession,
+  trashSession,
+  permanentlyDeleteSession,
+  latestOrCreate,
   sessionDir,
   sessionExists,
   updateMeta,
@@ -212,7 +215,10 @@ app.get('/api/sessions/:id/events', async (req, res) => {
  * ------------------------------------------------------------------ */
 
 app.get('/api/sessions', async (req, res) => {
-  const scope = req.query.scope === 'active' || req.query.scope === 'archived' ? req.query.scope : 'all';
+  const requestedScope = typeof req.query.scope === 'string' ? req.query.scope : 'all';
+  const scope = requestedScope === 'recent' || requestedScope === 'active' || requestedScope === 'archived' || requestedScope === 'trash' || requestedScope === 'all'
+    ? requestedScope
+    : 'all';
   const search = typeof req.query.search === 'string' ? req.query.search : '';
   try {
     res.json({ sessions: await listSessions(scope, search) });
@@ -221,10 +227,10 @@ app.get('/api/sessions', async (req, res) => {
   }
 });
 
-app.get('/api/startup', async (_req, res) => {
+app.get('/api/startup', async (req, res) => {
   try {
-    const sessions = await listSessions('active');
-    const session = sessions[0] ?? (await createSession());
+    const selectedId = typeof req.query.selectedId === 'string' ? req.query.selectedId : undefined;
+    const session = await latestOrCreate(selectedId);
     res.json({ session });
   } catch (error) {
     sendError(res, error, 409);
@@ -325,9 +331,33 @@ app.post('/api/sessions/:id/archive', async (req, res) => {
 });
 
 app.post('/api/sessions/:id/restore', async (req, res) => {
-  const session = await restoreSession(req.params.id);
-  if (!session) return res.status(404).json({ error: 'No such session' });
-  res.json({ session });
+  try {
+    const session = await restoreSession(req.params.id);
+    if (!session) return res.status(404).json({ error: 'No such session' });
+    res.json({ session });
+  } catch (error) {
+    res.status(409).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+app.post('/api/sessions/:id/trash', async (req, res) => {
+  try {
+    const session = await trashSession(req.params.id);
+    if (!session) return res.status(404).json({ error: 'No such session' });
+    res.json({ session });
+  } catch (error) {
+    res.status(409).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+app.delete('/api/sessions/:id', async (req, res) => {
+  try {
+    const deleted = await permanentlyDeleteSession(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'No such session' });
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(409).json({ error: error instanceof Error ? error.message : String(error) });
+  }
 });
 
 app.patch('/api/sessions/:id', async (req, res) => {

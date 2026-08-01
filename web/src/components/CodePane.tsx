@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { EditorState } from '@codemirror/state';
+import { Compartment, EditorState } from '@codemirror/state';
 import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 
@@ -22,6 +22,9 @@ export function CodePane(): JSX.Element {
   const viewRef = useRef<EditorView | null>(null);
   const setSource = useStore((s) => s.setSource);
   const source = useStore((s) => s.source);
+  const session = useStore((s) => s.session);
+  const editable = !session?.archived && !session?.trashed && !session?.agentLease;
+  const editableCompartment = useRef(new Compartment());
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -36,6 +39,7 @@ export function CodePane(): JSX.Element {
           history(),
           keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
           EditorView.lineWrapping,
+          editableCompartment.current.of(EditorView.editable.of(editable)),
           EditorView.contentAttributes.of({ 'aria-label': 'Mermaid source' }),
           theme,
           EditorView.updateListener.of((update) => {
@@ -51,6 +55,10 @@ export function CodePane(): JSX.Element {
       viewRef.current = null;
     };
   }, [setSource]);
+
+  useEffect(() => {
+    viewRef.current?.dispatch({ effects: editableCompartment.current.reconfigure(EditorView.editable.of(editable)) });
+  }, [editable]);
 
   // Push external changes (agent edits, undo, inspector) into the editor.
   useEffect(() => {

@@ -17,7 +17,7 @@ export function App(): JSX.Element {
   const [activeView, setActiveView] = useState<WorkbenchView>('preview');
 
   useEffect(() => {
-    void loadSession(localStorage.getItem('mdve.session') ?? undefined).catch(() => void loadSession());
+    void loadSession(localStorage.getItem('mdve.session') ?? undefined, { startup: true }).catch(() => void loadSession());
     void loadProviders();
   }, [loadSession, loadProviders]);
 

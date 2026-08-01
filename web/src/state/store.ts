@@ -10,6 +10,8 @@ export type Selection =
   | { kind: 'node'; id: string }
   | { kind: 'edge'; key: string };
 
+export type LibraryScope = 'recent' | 'all' | 'archived' | 'trash';
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'agent' | 'system';
@@ -23,6 +25,7 @@ export interface ChatMessage {
 interface Store {
   session: SessionMeta | null;
   sessions: SessionMeta[];
+  libraryScope: LibraryScope;
   librarySearch: string;
   workspace: string;
   conversations: ConversationRecord[];
@@ -57,13 +60,16 @@ interface Store {
   promoteDraft: () => void;
   resolveConflict: (choice: 'local' | 'current') => void;
 
-  loadSession: (id?: string) => Promise<void>;
+  loadSession: (id?: string, opts?: { startup?: boolean }) => Promise<void>;
   refreshSessions: () => Promise<void>;
+  setLibraryScope: (scope: LibraryScope) => void;
   setLibrarySearch: (search: string) => void;
   newSession: () => Promise<void>;
   renameSession: (title: string) => Promise<void>;
   archiveSession: () => Promise<void>;
   restoreSession: () => Promise<void>;
+  trashSession: () => Promise<void>;
+  permanentlyDeleteSession: () => Promise<void>;
 
   loadConversations: () => Promise<void>;
   selectConversation: (id: string) => Promise<void>;
@@ -116,6 +122,7 @@ export async function flushDiagramBeforeNavigation(diagram: SessionMeta | null):
 export const useStore = create<Store>((set, get) => ({
   session: null,
   sessions: [],
+  libraryScope: 'recent',
   librarySearch: '',
   workspace: '',
   conversations: [],
@@ -143,7 +150,7 @@ export const useStore = create<Store>((set, get) => ({
   setSource: (source, opts = {}) => {
     const { source: previous, session } = get();
     if (source === previous) return;
-    if (session && opts.persist !== false && (session.archived || session.agentLease)) return;
+    if (session && opts.persist !== false && (session.archived || session.trashed || session.agentLease)) return;
     const history = opts.history !== false;
     set((state) => ({
       source,
@@ -164,7 +171,7 @@ export const useStore = create<Store>((set, get) => ({
 
   undo: () => {
     const { past, source, future, session } = get();
-    if (past.length === 0 || session?.archived || session?.agentLease) return;
+    if (past.length === 0 || session?.archived || session?.trashed || session?.agentLease) return;
     const previous = past[past.length - 1];
     set({
       source: previous,
@@ -177,7 +184,7 @@ export const useStore = create<Store>((set, get) => ({
 
   redo: () => {
     const { future, source, past, session } = get();
-    if (future.length === 0 || session?.archived || session?.agentLease) return;
+    if (future.length === 0 || session?.archived || session?.trashed || session?.agentLease) return;
     const next = future[0];
     set({
       source: next,
@@ -201,7 +208,7 @@ export const useStore = create<Store>((set, get) => ({
 
   promoteDraft: () => {
     const { session, recoveryDraft, revision } = get();
-    if (!session || !recoveryDraft || session.archived || session.agentLease) return;
+    if (!session || !recoveryDraft || session.archived || session.trashed || session.agentLease) return;
     diagramPersistence.seed(session.id, session.revision ?? revision);
     set((state) => ({
       source: recoveryDraft.source,
@@ -238,12 +245,22 @@ export const useStore = create<Store>((set, get) => ({
     }
   },
 
-  loadSession: async (id) => {
+  loadSession: async (id, opts = {}) => {
     await flushDiagramBeforeNavigation(get().session);
 
     let targetId = id;
-    if (!targetId) targetId = (await api.startup()).session.id;
-    const { session, source, workspace } = await api.getSession(targetId);
+    let loaded: Awaited<ReturnType<typeof api.getSession>>;
+    if (targetId) {
+      loaded = await api.getSession(targetId);
+      if (opts.startup && (loaded.session.archived || loaded.session.trashed)) {
+        targetId = (await api.startup(targetId)).session.id;
+        loaded = await api.getSession(targetId);
+      }
+    } else {
+      targetId = (await api.startup()).session.id;
+      loaded = await api.getSession(targetId);
+    }
+    const { session, source, workspace } = loaded;
     diagramPersistence.seed(session.id, session.revision ?? 0);
     set({
       session,
@@ -281,9 +298,14 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   refreshSessions: async () => {
-    const { librarySearch } = get();
-    const { sessions } = await api.listSessions('all', librarySearch);
-    set({ sessions });
+    const { libraryScope, librarySearch } = get();
+    const { sessions } = await api.listSessions(libraryScope, librarySearch);
+    if (get().libraryScope === libraryScope && get().librarySearch === librarySearch) set({ sessions });
+  },
+
+  setLibraryScope: (libraryScope) => {
+    set({ libraryScope });
+    void get().refreshSessions();
   },
 
   setLibrarySearch: (librarySearch) => {
@@ -306,12 +328,15 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   archiveSession: async () => {
-    const { session } = get();
+    const { session, libraryScope: scopeAtStart } = get();
     if (!session) return;
     await flushDiagramBeforeNavigation(session);
     await api.archiveSession(session.id);
-    await get().refreshSessions();
-    const next = get().sessions.find((candidate) => !candidate.archived && !candidate.trashed);
+    if (get().libraryScope === scopeAtStart) set({ libraryScope: 'recent' });
+    const search = get().librarySearch;
+    const { sessions } = await api.listSessions('recent', search);
+    if (get().libraryScope === 'recent' && get().librarySearch === search) set({ sessions });
+    const next = sessions[0];
     if (next) await get().loadSession(next.id);
     else await get().loadSession();
   },
@@ -320,8 +345,31 @@ export const useStore = create<Store>((set, get) => ({
     const { session } = get();
     if (!session) return;
     const result = await api.restoreSession(session.id);
-    set({ session: result.session });
+    set({ session: result.session, libraryScope: 'recent' });
     await get().refreshSessions();
+  },
+
+  trashSession: async () => {
+    const { session, libraryScope: scopeAtStart } = get();
+    if (!session) return;
+    await flushDiagramBeforeNavigation(session);
+    await api.trashSession(session.id);
+    if (get().libraryScope === scopeAtStart) set({ libraryScope: 'recent' });
+    const search = get().librarySearch;
+    const { sessions } = await api.listSessions('recent', search);
+    if (get().libraryScope === 'recent' && get().librarySearch === search) set({ sessions });
+    const next = sessions[0];
+    if (next) await get().loadSession(next.id);
+    else await get().loadSession();
+  },
+
+  permanentlyDeleteSession: async () => {
+    const { session } = get();
+    if (!session?.trashed) return;
+    await api.permanentlyDeleteSession(session.id);
+    set({ libraryScope: 'trash' });
+    await get().refreshSessions();
+    await get().loadSession();
   },
 
   loadConversations: async () => {
