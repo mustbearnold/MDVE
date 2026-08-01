@@ -4,7 +4,10 @@ import { join } from 'node:path';
 
 const root = process.cwd();
 const runs = Number(process.env.MDVE_STABILITY_RUNS ?? 10);
-const outputRoot = join(root, process.env.MDVE_STABILITY_OUTPUT ?? 'test-results/release-stability');
+// Playwright owns and cleans `test-results` at the start of a browser run.
+// Keep the stability ledger in the release evidence tree so the runner cannot
+// delete its own directory between suites.
+const outputRoot = join(root, process.env.MDVE_STABILITY_OUTPUT ?? 'release/stability');
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const commands = [
   ['unit-contract', ['test']],

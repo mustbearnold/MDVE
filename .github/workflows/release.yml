@@ -46,7 +46,7 @@ jobs:
           npm audit --omit=dev --audit-level=high
           npm run verify:licenses
           npm run test:reliability
-          npm run test:release:stability
+          MDVE_STABILITY_OUTPUT=release/stability npm run test:release:stability
 
       - name: Install exact supported Codex CLI
         run: npm install --prefix "$RUNNER_TEMP/codex" @openai/codex@0.146.0
@@ -88,7 +88,7 @@ jobs:
       - name: Write release evidence manifest
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          MDVE_PERFORMANCE_OUTPUT="release/performance.json" MDVE_STABILITY_SUMMARY="test-results/release-stability/summary.json" MDVE_LIFECYCLE_OUTPUT="release/lifecycle.json" MDVE_PROCESS_CRASH_OUTPUT="release/process-crash.json" MDVE_CODEX_SCHEMA_OUTPUT="test-results/codex-schema.json" MDVE_CODEX_BIN="$RUNNER_TEMP/codex/node_modules/.bin/codex" node scripts/write-release-evidence.mjs "release/mdve-${VERSION}.tgz" release/evidence.json
+          MDVE_PERFORMANCE_OUTPUT="release/performance.json" MDVE_STABILITY_SUMMARY="release/stability/summary.json" MDVE_LIFECYCLE_OUTPUT="release/lifecycle.json" MDVE_PROCESS_CRASH_OUTPUT="release/process-crash.json" MDVE_CODEX_SCHEMA_OUTPUT="test-results/codex-schema.json" MDVE_CODEX_BIN="$RUNNER_TEMP/codex/node_modules/.bin/codex" node scripts/write-release-evidence.mjs "release/mdve-${VERSION}.tgz" release/evidence.json
 
       - name: Publish the immutable candidate under the next tag
         run: |
@@ -105,7 +105,7 @@ jobs:
           MDVE_TRUSTED_PUBLISHER: npm trusted publishing via GitHub Actions OIDC; registry integrity and signatures verified
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          MDVE_PERFORMANCE_OUTPUT="release/performance.json" MDVE_STABILITY_SUMMARY="test-results/release-stability/summary.json" MDVE_LIFECYCLE_OUTPUT="release/lifecycle.json" MDVE_PROCESS_CRASH_OUTPUT="release/process-crash.json" MDVE_CODEX_SCHEMA_OUTPUT="test-results/codex-schema.json" MDVE_CODEX_BIN="$RUNNER_TEMP/codex/node_modules/.bin/codex" MDVE_REGISTRY_EVIDENCE="release/registry.json" node scripts/write-release-evidence.mjs "release/mdve-${VERSION}.tgz" release/evidence.json
+          MDVE_PERFORMANCE_OUTPUT="release/performance.json" MDVE_STABILITY_SUMMARY="release/stability/summary.json" MDVE_LIFECYCLE_OUTPUT="release/lifecycle.json" MDVE_PROCESS_CRASH_OUTPUT="release/process-crash.json" MDVE_CODEX_SCHEMA_OUTPUT="test-results/codex-schema.json" MDVE_CODEX_BIN="$RUNNER_TEMP/codex/node_modules/.bin/codex" MDVE_REGISTRY_EVIDENCE="release/registry.json" node scripts/write-release-evidence.mjs "release/mdve-${VERSION}.tgz" release/evidence.json
 
       - name: Upload release evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -113,7 +113,7 @@ jobs:
           name: mdve-${{ github.ref_name }}-release-evidence
           path: |
             release/
-            test-results/release-stability/
+            release/stability/
             test-results/codex-schema.json
           if-no-files-found: error
 
