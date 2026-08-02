@@ -1,7 +1,19 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
-import { addNode, deleteEdge, deleteNode, setNodeLabel } from '../mermaid/mutate';
-import { reservedIdsIn, supportsStructuredEditing, type Diagram } from '../mermaid/parse';
+import {
+  addEdge,
+  addNode,
+  clearLayoutPositions,
+  deleteEdge,
+  deleteNode,
+  edgePositionKey,
+  readEdgeLabelPositions,
+  readNodePositions,
+  setEdgeLabelPosition,
+  setNodeLabel,
+  setNodePosition,
+} from '../mermaid/mutate';
+import { parseDiagram, reservedIdsIn, supportsStructuredEditing, type Diagram } from '../mermaid/parse';
 import { useStore, type Selection } from '../state/store';
 import { Icon } from './Icon';
 
@@ -114,7 +126,7 @@ function selectionForTarget(
 }
 
 type ContextMenuTarget = Exclude<Selection, { kind: 'none' }> | null;
-type ContextMenuState = { left: number; top: number; selection: ContextMenuTarget };
+type ContextMenuState = { left: number; top: number; selection: ContextMenuTarget; graphPoint: Point };
 type Point = { x: number; y: number };
 type DragState =
   | { kind: 'canvas'; x: number; y: number; ox: number; oy: number; moved: boolean }
@@ -174,14 +186,23 @@ export function Preview(): JSX.Element {
   const [inlineDraft, setInlineDraft] = useState('');
   const [inlineEditorRect, setInlineEditorRect] = useState({ left: 0, top: 0, width: 0, height: 0 });
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [connectionSourceId, setConnectionSourceId] = useState<string | null>(null);
   const editable = !session?.archived && !session?.trashed && !session?.agentLease;
   const structuredEditingAvailable = editable && supportsStructuredEditing(diagram, renderError);
+  const hasSavedLayout = useMemo(
+    () => readNodePositions(source).size > 0 || readEdgeLabelPositions(source).size > 0,
+    [source],
+  );
+  const connectionSourceLabel = connectionSourceId
+    ? diagram.nodes.find((node) => node.id === connectionSourceId)?.label ?? connectionSourceId
+    : null;
   /** Intrinsic size of the last render. */
   const [content, setContent] = useState({ width: 0, height: 0 });
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const fitRef = useRef<{ width: number; height: number } | null>(null);
   /** Once the user zooms or pans, stop refitting on every edit. */
   const manualViewRef = useRef(false);
+  const pendingNodePlacementRef = useRef<{ id: string; point: Point } | null>(null);
 
   const fitToView = useCallback(() => {
     const size = fitRef.current;
@@ -295,8 +316,14 @@ export function Preview(): JSX.Element {
 
     (async () => {
       if (renderedSourceRef.current !== source) {
-        nodeOffsetsRef.current.clear();
-        edgeLabelOffsetsRef.current.clear();
+        nodeOffsetsRef.current = new Map(readNodePositions(source));
+        const savedEdgePositions = readEdgeLabelPositions(source);
+        const restoredEdgeOffsets = new Map<string, Point>();
+        for (const edge of diagram.edges) {
+          const offset = savedEdgePositions.get(edgePositionKey(diagram, edge));
+          if (offset) restoredEdgeOffsets.set(edge.key, offset);
+        }
+        edgeLabelOffsetsRef.current = restoredEdgeOffsets;
         renderedSourceRef.current = source;
       }
       if (!source.trim()) {
@@ -380,6 +407,25 @@ export function Preview(): JSX.Element {
           path.parentElement?.insertBefore(hit, path);
         });
         applyTransientOffsets();
+        const pendingPlacement = pendingNodePlacementRef.current;
+        if (pendingPlacement && diagram.nodes.some((node) => node.id === pendingPlacement.id)) {
+          const placedNode = Array.from(hostRef.current.querySelectorAll('g.node')).find(
+            (element) => nodeIdOf(element) === pendingPlacement.id,
+          ) as SVGGElement | undefined;
+          const bounds = placedNode?.getBBox();
+          if (bounds && bounds.width > 0 && bounds.height > 0) {
+            const offset = {
+              x: pendingPlacement.point.x - (bounds.x + bounds.width / 2),
+              y: pendingPlacement.point.y - (bounds.y + bounds.height / 2),
+            };
+            nodeOffsetsRef.current.set(pendingPlacement.id, offset);
+            pendingNodePlacementRef.current = null;
+            applyNodeOffset(pendingPlacement.id, offset);
+            applyEdgeOffsets();
+            const positionedSource = setNodePosition(source, pendingPlacement.id, offset);
+            if (positionedSource !== source) setSource(positionedSource);
+          }
+        }
         if (!manualViewRef.current) fitToView();
         setRenderError(null);
       } catch (err) {
@@ -393,7 +439,7 @@ export function Preview(): JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [applyTransientOffsets, beginInlineEdit, select, source, diagram, knownNodeIds, setRenderError, fitToView]);
+  }, [applyEdgeOffsets, applyNodeOffset, applyTransientOffsets, beginInlineEdit, diagram, fitToView, knownNodeIds, select, setRenderError, setSource, source]);
 
   // Refit when the pane itself changes size.
   useEffect(() => {
@@ -443,7 +489,10 @@ export function Preview(): JSX.Element {
       if (!contextMenuRef.current?.contains(event.target as Node)) setContextMenu(null);
     };
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setContextMenu(null);
+      if (event.key === 'Escape') {
+        setContextMenu(null);
+        setConnectionSourceId(null);
+      }
     };
     window.addEventListener('pointerdown', closeOnOutsidePointer);
     window.addEventListener('keydown', closeOnEscape);
@@ -453,6 +502,28 @@ export function Preview(): JSX.Element {
     };
   }, [contextMenu]);
 
+  const offsetX = (canvasSize.width - content.width * view.scale) / 2 + view.x;
+  const offsetY = (canvasSize.height - content.height * view.scale) / 2 + view.y;
+  const stageTransform = `translate(${offsetX}px, ${offsetY}px) scale(${view.scale})`;
+
+  const finishConnection = useCallback((targetId: string): boolean => {
+    if (!connectionSourceId) return false;
+    if (targetId === connectionSourceId) {
+      setConnectionSourceId(null);
+      return true;
+    }
+    const nextSource = addEdge(source, connectionSourceId, targetId);
+    setConnectionSourceId(null);
+    if (nextSource === source) return true;
+    const nextEdges = parseDiagram(nextSource).edges;
+    const nextEdge = nextEdges[nextEdges.length - 1];
+    setSource(nextSource);
+    select(nextEdge ? { kind: 'edge', key: nextEdge.key } : { kind: 'none' });
+    return true;
+  }, [connectionSourceId, select, setSource, source]);
+
+  const cancelConnection = useCallback(() => setConnectionSourceId(null), []);
+
   const onClick = useCallback(
     (event: React.MouseEvent) => {
       if (draggedRef.current) {
@@ -461,6 +532,7 @@ export function Preview(): JSX.Element {
       }
       const target = event.target as Element;
       const nextSelection = selectionForTarget(target, diagram, knownNodeIds) ?? { kind: 'none' };
+      if (nextSelection.kind === 'node' && finishConnection(nextSelection.id)) return;
       if (nextSelection.kind === 'node' && editable) {
         select(nextSelection);
         beginInlineEdit(nextSelection.id);
@@ -468,7 +540,7 @@ export function Preview(): JSX.Element {
       }
       select(nextSelection);
     },
-    [beginInlineEdit, diagram, editable, knownNodeIds, select],
+    [beginInlineEdit, diagram, editable, finishConnection, knownNodeIds, select],
   );
 
   const onDoubleClick = useCallback(
@@ -477,9 +549,9 @@ export function Preview(): JSX.Element {
       const nextSelection = selectionForTarget(target, diagram, knownNodeIds);
       if (nextSelection?.kind !== 'node') return;
       event.preventDefault();
-      beginInlineEdit(nextSelection.id);
+      if (!finishConnection(nextSelection.id)) beginInlineEdit(nextSelection.id);
     },
-    [beginInlineEdit, diagram, knownNodeIds],
+    [beginInlineEdit, diagram, finishConnection, knownNodeIds],
   );
 
   const onContextMenu = useCallback((event: React.MouseEvent) => {
@@ -487,26 +559,51 @@ export function Preview(): JSX.Element {
     const preview = previewRef.current;
     if (!preview) return;
     const box = preview.getBoundingClientRect();
+    const canvasBox = canvasRef.current?.getBoundingClientRect() ?? box;
     const nextSelection = selectionForTarget(event.target as Element, diagram, knownNodeIds);
     select(nextSelection ?? { kind: 'none' });
     const padding = 8;
     const maxLeft = Math.max(padding, box.width - 196);
     const maxTop = Math.max(padding, box.height - 180);
+    const scale = Math.max(0.05, view.scale);
     setContextMenu({
       left: Math.min(maxLeft, Math.max(padding, event.clientX - box.left)),
       top: Math.min(maxTop, Math.max(padding, event.clientY - box.top)),
       selection: nextSelection,
+      graphPoint: {
+        x: (event.clientX - canvasBox.left - offsetX) / scale,
+        y: (event.clientY - canvasBox.top - offsetY) / scale,
+      },
     });
-  }, [diagram, knownNodeIds, select]);
+  }, [diagram, knownNodeIds, offsetX, offsetY, select, view.scale]);
 
   const addNodeFromContextMenu = useCallback(() => {
-    if (!structuredEditingAvailable) return;
+    if (!structuredEditingAvailable || !contextMenu) return;
     const result = addNode(source);
     if (!result.id || result.source === source) return;
+    pendingNodePlacementRef.current = { id: result.id, point: contextMenu.graphPoint };
     setSource(result.source);
     select({ kind: 'node', id: result.id });
     setContextMenu(null);
-  }, [select, setSource, source, structuredEditingAvailable]);
+  }, [contextMenu, select, setSource, source, structuredEditingAvailable]);
+
+  const startConnectionFromContextMenu = useCallback(() => {
+    const target = contextMenu?.selection;
+    if (!structuredEditingAvailable || !target || target.kind !== 'node') return;
+    setConnectionSourceId(target.id);
+    select(target);
+    setContextMenu(null);
+  }, [contextMenu?.selection, select, structuredEditingAvailable]);
+
+  const resetLayout = useCallback(() => {
+    if (!structuredEditingAvailable || !hasSavedLayout) return;
+    setConnectionSourceId(null);
+    pendingNodePlacementRef.current = null;
+    nodeOffsetsRef.current.clear();
+    edgeLabelOffsetsRef.current.clear();
+    manualViewRef.current = false;
+    setSource(clearLayoutPositions(source));
+  }, [hasSavedLayout, setSource, source, structuredEditingAvailable]);
 
   const editNodeFromContextMenu = useCallback(() => {
     const target = contextMenu?.selection;
@@ -551,13 +648,16 @@ export function Preview(): JSX.Element {
       const nextSelection = selectionForTarget(target, diagram, knownNodeIds);
       if (!nextSelection) return;
       event.preventDefault();
+      if (nextSelection.kind === 'node' && finishConnection(nextSelection.id)) {
+        return;
+      }
       if (nextSelection.kind === 'node' && event.key === 'Enter') {
         beginInlineEdit(nextSelection.id);
       } else {
         select(nextSelection);
       }
     },
-    [beginInlineEdit, diagram, knownNodeIds, select],
+    [beginInlineEdit, diagram, finishConnection, knownNodeIds, select],
   );
 
   const moveDrag = useCallback((clientX: number, clientY: number) => {
@@ -590,16 +690,25 @@ export function Preview(): JSX.Element {
   }, [applyEdgeLabelOffset, applyEdgeOffsets, applyNodeOffset, view.scale]);
 
   const endDrag = useCallback(() => {
-    if (dragRef.current?.moved) {
+    const drag = dragRef.current;
+    if (drag?.moved) {
       draggedRef.current = true;
       window.setTimeout(() => {
         draggedRef.current = false;
       }, 0);
     }
+    if (drag?.kind === 'node' && drag.moved && editable) {
+      const offset = nodeOffsetsRef.current.get(drag.id);
+      if (offset) setSource(setNodePosition(source, drag.id, offset));
+    }
+    if (drag?.kind === 'edge-label' && drag.moved && editable) {
+      const offset = edgeLabelOffsetsRef.current.get(drag.key);
+      if (offset) setSource(setEdgeLabelPosition(source, drag.key, offset));
+    }
     dragRef.current = null;
     dragCleanupRef.current?.();
     dragCleanupRef.current = null;
-  }, []);
+  }, [editable, setSource, source]);
 
   const onPointerDown = useCallback((event: React.PointerEvent) => {
     if (event.button !== 0) return;
@@ -648,11 +757,6 @@ export function Preview(): JSX.Element {
     };
   }, [diagram, editable, endDrag, knownNodeIds, moveDrag, select, view.x, view.y]);
 
-  // Centre the scaled diagram in the pane, then apply the user's pan.
-  const offsetX = (canvasSize.width - content.width * view.scale) / 2 + view.x;
-  const offsetY = (canvasSize.height - content.height * view.scale) / 2 + view.y;
-  const stageTransform = `translate(${offsetX}px, ${offsetY}px) scale(${view.scale})`;
-
   return (
     <div className="preview" ref={previewRef}>
       <div className="preview-tools" aria-label="Preview controls">
@@ -673,10 +777,27 @@ export function Preview(): JSX.Element {
         >
           <Icon name="fit" />
         </button>
+        <button
+          className="icon-button"
+          onClick={resetLayout}
+          disabled={!structuredEditingAvailable || !hasSavedLayout}
+          title="Reset saved node positions"
+          aria-label="Reset saved node positions"
+        >
+          <Icon name="reset" />
+        </button>
         <span className="zoom-label" aria-label={`Zoom ${Math.round(view.scale * 100)} percent`}>
           {Math.round(view.scale * 100)}%
         </span>
       </div>
+
+      {connectionSourceId && (
+        <div className="preview-connection-mode" role="status" aria-live="polite">
+          <Icon name="link" />
+          <span>Link from <strong>{connectionSourceLabel}</strong> — select a target node</span>
+          <button type="button" onClick={cancelConnection}>Cancel</button>
+        </div>
+      )}
 
       <div
         className="preview-canvas"
@@ -711,6 +832,7 @@ export function Preview(): JSX.Element {
             if (event.key === 'Escape') {
               event.preventDefault();
               setContextMenu(null);
+              setConnectionSourceId(null);
             }
           }}
         >
@@ -727,6 +849,14 @@ export function Preview(): JSX.Element {
             <>
               <button type="button" role="menuitem" disabled={!editable} onClick={editNodeFromContextMenu}>
                 Edit label
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                disabled={!structuredEditingAvailable}
+                onClick={startConnectionFromContextMenu}
+              >
+                Start link
               </button>
               <button
                 type="button"

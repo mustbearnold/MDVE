@@ -38,7 +38,12 @@ function insertionIndex(lines: Line[]): number {
   let index = lines.length;
   while (index > 0) {
     const line = lines[index - 1];
-    if (line.kind !== 'raw' || line.raw.trim() !== '') break;
+    if (
+      line.kind !== 'raw' ||
+      (line.raw.trim() !== '' && !isNodePositionLine(line.raw) && !isEdgePositionLine(line.raw))
+    ) {
+      break;
+    }
     index--;
   }
   return index;
@@ -46,6 +51,200 @@ function insertionIndex(lines: Line[]): number {
 
 function defaultIndent(): string {
   return '  ';
+}
+
+export interface NodePosition {
+  x: number;
+  y: number;
+}
+
+const NODE_POSITION_RE = /^\s*%%\s*mdve:position\s+([A-Za-z0-9_][A-Za-z0-9_.-]*)\s+(-?(?:\d+(?:\.\d+)?|\.\d+))\s+(-?(?:\d+(?:\.\d+)?|\.\d+))\s*$/i;
+const EDGE_POSITION_RE = /^\s*%%\s*mdve:edge-label-position\s+([A-Za-z0-9_][A-Za-z0-9_.-]*)\s+([A-Za-z0-9_][A-Za-z0-9_.-]*)\s+(\d+)\s+(-?(?:\d+(?:\.\d+)?|\.\d+))\s+(-?(?:\d+(?:\.\d+)?|\.\d+))\s*$/i;
+
+function formatPosition(value: number): string {
+  if (!Number.isFinite(value)) return '0';
+  const rounded = Math.round(value * 10) / 10;
+  return String(Object.is(rounded, -0) ? 0 : rounded);
+}
+
+function isNodePositionLine(line: string): boolean {
+  return NODE_POSITION_RE.test(line);
+}
+
+function edgeMetadataKey(from: string, to: string, ordinal: number): string {
+  return `${from}->${to}#${ordinal}`;
+}
+
+function isEdgePositionLine(line: string): boolean {
+  return EDGE_POSITION_RE.test(line);
+}
+
+/**
+ * Reads MDVE's presentation-only node offsets from Mermaid comments. Mermaid
+ * ignores these lines, while keeping them in the canonical source makes a
+ * canvas move durable, undoable, exportable, and safe for the existing file
+ * based revision contract.
+ */
+export function readNodePositions(source: string): Map<string, NodePosition> {
+  const positions = new Map<string, NodePosition>();
+  for (const line of source.split('\n')) {
+    const match = NODE_POSITION_RE.exec(line);
+    if (!match) continue;
+    positions.set(match[1], { x: Number(match[2]), y: Number(match[3]) });
+  }
+  return positions;
+}
+
+function replaceNodePositionMetadata(source: string, id: string, position: NodePosition): string {
+  const lines = source.split('\n');
+  const metadata = `%% mdve:position ${id} ${formatPosition(position.x)} ${formatPosition(position.y)}`;
+  const existing = lines.findIndex((line) => {
+    const match = NODE_POSITION_RE.exec(line);
+    return match?.[1] === id;
+  });
+  if (existing >= 0) lines[existing] = metadata;
+  else {
+    let at = lines.length;
+    while (at > 0 && lines[at - 1].trim() === '') at--;
+    lines.splice(at, 0, metadata);
+  }
+  return lines.join('\n');
+}
+
+export function setNodePosition(source: string, id: string, position: NodePosition): string {
+  if (!/^[A-Za-z0-9_][A-Za-z0-9_.-]*$/.test(id)) return source;
+  const diagram = parseDiagram(source);
+  if (!supportsStructuredEditing(diagram) || !diagram.nodes.some((node) => node.id === id)) return source;
+  return replaceNodePositionMetadata(source, id, position);
+}
+
+export function clearNodePositions(source: string): string {
+  return source
+    .split('\n')
+    .filter((line) => !isNodePositionLine(line))
+    .join('\n');
+}
+
+/** Gives parallel links a stable presentation identity without changing their Mermaid key. */
+export function edgePositionKey(diagram: Diagram, edge: Diagram['edges'][number]): string {
+  let ordinal = 0;
+  for (const candidate of diagram.edges) {
+    if (candidate.from !== edge.from || candidate.to !== edge.to) continue;
+    if (candidate.key === edge.key) return edgeMetadataKey(edge.from, edge.to, ordinal);
+    ordinal++;
+  }
+  return edgeMetadataKey(edge.from, edge.to, ordinal);
+}
+
+export function readEdgeLabelPositions(source: string): Map<string, NodePosition> {
+  const positions = new Map<string, NodePosition>();
+  for (const line of source.split('\n')) {
+    const match = EDGE_POSITION_RE.exec(line);
+    if (!match) continue;
+    positions.set(edgeMetadataKey(match[1], match[2], Number(match[3])), { x: Number(match[4]), y: Number(match[5]) });
+  }
+  return positions;
+}
+
+export function setEdgeLabelPosition(source: string, key: string, position: NodePosition): string {
+  const diagram = parseDiagram(source);
+  if (!supportsStructuredEditing(diagram)) return source;
+  const edge = diagram.edges.find((candidate) => candidate.key === key);
+  if (!edge) return source;
+  const identity = edgePositionKey(diagram, edge);
+  const lines = source.split('\n');
+  const metadata = `%% mdve:edge-label-position ${edge.from} ${edge.to} ${identity.split('#')[1]} ${formatPosition(position.x)} ${formatPosition(position.y)}`;
+  const existing = lines.findIndex((line) => {
+    const match = EDGE_POSITION_RE.exec(line);
+    return match && edgeMetadataKey(match[1], match[2], Number(match[3])) === identity;
+  });
+  if (existing >= 0) lines[existing] = metadata;
+  else {
+    let at = lines.length;
+    while (at > 0 && lines[at - 1].trim() === '') at--;
+    while (at > 0 && (isNodePositionLine(lines[at - 1]) || isEdgePositionLine(lines[at - 1]))) at--;
+    lines.splice(at, 0, metadata);
+  }
+  return lines.join('\n');
+}
+
+export function clearEdgeLabelPositions(source: string): string {
+  return source
+    .split('\n')
+    .filter((line) => !isEdgePositionLine(line))
+    .join('\n');
+}
+
+export function clearLayoutPositions(source: string): string {
+  return source
+    .split('\n')
+    .filter((line) => !isNodePositionLine(line) && !isEdgePositionLine(line))
+    .join('\n');
+}
+
+function renameNodePositionMetadata(source: string, oldId: string, newId: string): string {
+  return source
+    .split('\n')
+    .map((line) => {
+      const match = NODE_POSITION_RE.exec(line);
+      return match?.[1] === oldId
+        ? `%% mdve:position ${newId} ${formatPosition(Number(match[2]))} ${formatPosition(Number(match[3]))}`
+        : line;
+    })
+    .join('\n');
+}
+
+function renameEdgePositionMetadata(source: string, oldId: string, newId: string): string {
+  return source
+    .split('\n')
+    .map((line) => {
+      const match = EDGE_POSITION_RE.exec(line);
+      if (!match) return line;
+      const from = match[1] === oldId ? newId : match[1];
+      const to = match[2] === oldId ? newId : match[2];
+      return `%% mdve:edge-label-position ${from} ${to} ${match[3]} ${formatPosition(Number(match[4]))} ${formatPosition(Number(match[5]))}`;
+    })
+    .join('\n');
+}
+
+function removeNodePositionMetadata(source: string, id: string): string {
+  return source
+    .split('\n')
+    .filter((line) => {
+      const node = NODE_POSITION_RE.exec(line);
+      if (node) return node[1] !== id;
+      const edge = EDGE_POSITION_RE.exec(line);
+      return !edge || (edge[1] !== id && edge[2] !== id);
+    })
+    .join('\n');
+}
+
+function reindexEdgePositionMetadata(source: string, deletedIdentity: string): string {
+  const deleted = /^(.*)->(.*)#(\d+)$/.exec(deletedIdentity);
+  if (!deleted) return source;
+  const deletedFrom = deleted[1];
+  const deletedTo = deleted[2];
+  const deletedOrdinal = Number(deleted[3]);
+
+  return source
+    .split('\n')
+    .filter((line) => {
+      const match = EDGE_POSITION_RE.exec(line);
+      if (!match) return true;
+      return !(
+        match[1] === deletedFrom &&
+        match[2] === deletedTo &&
+        Number(match[3]) === deletedOrdinal
+      );
+    })
+    .map((line) => {
+      const match = EDGE_POSITION_RE.exec(line);
+      if (!match || match[1] !== deletedFrom || match[2] !== deletedTo) return line;
+      const ordinal = Number(match[3]);
+      const nextOrdinal = ordinal > deletedOrdinal ? ordinal - 1 : ordinal;
+      return `%% mdve:edge-label-position ${match[1]} ${match[2]} ${nextOrdinal} ${formatPosition(Number(match[4]))} ${formatPosition(Number(match[5]))}`;
+    })
+    .join('\n');
 }
 
 function reindex(lines: Line[]): Line[] {
@@ -164,7 +363,7 @@ export function renameNodeId(source: string, oldId: string, newId: string): stri
       }
     }
   }
-  return serializeDiagram(lines);
+  return renameEdgePositionMetadata(renameNodePositionMetadata(serializeDiagram(lines), oldId, newId), oldId, newId);
 }
 
 export function addNode(
@@ -267,6 +466,8 @@ export function deleteEdge(source: string, key: string): string {
   const [lineIndex, tokenIndex] = key.split(':').map(Number);
   const line = lines[lineIndex];
   if (!line || line.kind !== 'statement') return source;
+  const edge = diagram.edges.find((candidate) => candidate.key === key);
+  if (!edge) return source;
 
   const left = line.tokens.slice(0, tokenIndex);
   const right = line.tokens.slice(tokenIndex + 1);
@@ -287,7 +488,8 @@ export function deleteEdge(source: string, key: string): string {
   }
 
   lines.splice(lineIndex, 1, ...replacements);
-  return serializeDiagram(reindex(lines));
+  const nextSource = serializeDiagram(reindex(lines));
+  return reindexEdgePositionMetadata(nextSource, edgePositionKey(diagram, edge));
 }
 
 /** Deletes a node and every link that touches it. */
@@ -350,7 +552,7 @@ export function deleteNode(source: string, id: string): string {
     }
   }
 
-  return serializeDiagram(reindex(out));
+  return removeNodePositionMetadata(serializeDiagram(reindex(out)), id);
 }
 
 export function setDirection(source: string, direction: string): string {

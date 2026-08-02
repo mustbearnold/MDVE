@@ -9,6 +9,7 @@ export type IconName =
   | 'outline'
   | 'plus'
   | 'preview'
+  | 'reset'
   | 'redo'
   | 'source'
   | 'undo'
@@ -46,6 +47,12 @@ export function Icon({ name }: { name: IconName }): JSX.Element {
       )}
       {name === 'fit' && (
         <path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5" />
+      )}
+      {name === 'reset' && (
+        <>
+          <path d="M4 7v5h5" />
+          <path d="M5.3 12A7 7 0 1 0 7 6.2L4 9" />
+        </>
       )}
       {name === 'library' && (
         <>

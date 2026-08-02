@@ -759,6 +759,16 @@ button.danger:hover:not(:disabled) {
 
 /* Preview ------------------------------------------------------------ */
 
+.preview-loading {
+  display: grid;
+  flex: 1;
+  min-height: 160px;
+  place-items: center;
+  color: var(--text-secondary);
+  background: var(--canvas);
+  font-size: 12px;
+}
+
 .preview {
   position: relative;
   flex: 1;
@@ -799,6 +809,49 @@ button.danger:hover:not(:disabled) {
 .preview-tools .icon-button:hover:not(:disabled) {
   background: rgba(167, 139, 250, 0.14);
   box-shadow: none;
+}
+
+.preview-connection-mode {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(420px, calc(100% - 32px));
+  min-height: 38px;
+  padding: 5px 6px 5px 10px;
+  color: var(--text-primary);
+  background: rgba(16, 24, 42, 0.88);
+  border: 1px solid rgba(167, 139, 250, 0.48);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.1), var(--shadow-sm);
+  backdrop-filter: blur(18px);
+}
+
+.preview-connection-mode .icon {
+  width: 16px;
+  height: 16px;
+  color: #c4b5fd;
+}
+
+.preview-connection-mode span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-connection-mode button {
+  min-height: 28px;
+  margin-left: auto;
+  padding: 3px 8px;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--border-subtle);
+  font-size: 11px;
 }
 
 .zoom-label {
@@ -1323,6 +1376,53 @@ button.danger:hover:not(:disabled) {
   border-radius: var(--radius-sm);
   font: 12px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
   white-space: pre-wrap;
+}
+
+.history-point-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.history-diff {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  padding-top: var(--space-1);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.history-diff > p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.history-diff pre {
+  max-height: 300px;
+  margin: 0;
+  white-space: pre;
+}
+
+.history-diff-added,
+.history-diff-removed,
+.history-diff-same {
+  display: block;
+  min-height: 1.45em;
+}
+
+.history-diff-added {
+  color: #b7f7d0;
+  background: rgba(16, 185, 129, 0.14);
+}
+
+.history-diff-removed {
+  color: #ffd1d7;
+  background: rgba(244, 63, 94, 0.14);
+}
+
+.history-diff-same {
+  color: var(--text-secondary);
 }
 
 .chat-log {

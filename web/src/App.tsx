@@ -9,7 +9,6 @@ import { CommandPalette } from './components/CommandPalette';
 import { ContextTabs, type ContextView } from './components/ContextTabs';
 import { Inspector } from './components/Inspector';
 import { HistoryPanel } from './components/HistoryPanel';
-import { Preview } from './components/Preview';
 import { Toolbar } from './components/Toolbar';
 import { WorkbenchTabs, type WorkbenchView } from './components/WorkbenchTabs';
 import { flushDiagramBeforeNavigation, useStore } from './state/store';
@@ -17,7 +16,24 @@ import { flushDiagramBeforeNavigation, useStore } from './state/store';
 const MIN_SOURCE_WIDTH = 260;
 const MIN_RIGHT_WIDTH = 280;
 const MIN_PREVIEW_WIDTH = 440;
+const Preview = lazy(() => import('./components/Preview').then((module) => ({ default: module.Preview })));
 const OutlinePanel = lazy(() => import('./components/OutlinePanel').then((module) => ({ default: module.OutlinePanel })));
+
+function PreviewSlot(): JSX.Element {
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setReady(true), 200);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  if (!ready) return <div className="preview-loading" role="status">Loading preview…</div>;
+  return (
+    <Suspense fallback={<div className="preview-loading" role="status">Loading preview…</div>}>
+      <Preview />
+    </Suspense>
+  );
+}
 
 function PanelDivider({
   side,
@@ -295,7 +311,7 @@ export function App(): JSX.Element {
                 <h2 id="preview-heading">Preview</h2>
                 <span>Select a node or link to inspect it</span>
               </header>
-              <Preview />
+              <PreviewSlot />
             </section>
             <PanelDivider
               side="right"

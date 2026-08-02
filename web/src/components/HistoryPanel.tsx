@@ -3,16 +3,53 @@ import { useEffect, useState } from 'react';
 import { api, type RecoveryPoint } from '../api';
 import { useStore } from '../state/store';
 
+type DiffKind = 'same' | 'added' | 'removed';
+type DiffRow = { kind: DiffKind; text: string };
+
 function formatTime(timestamp: number): string {
   return new Date(timestamp).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
 }
 
+function diffLines(before: string, after: string): DiffRow[] {
+  const left = before.split('\n');
+  const right = after.split('\n');
+  const rows = Array.from({ length: left.length + 1 }, () => new Uint32Array(right.length + 1));
+
+  for (let leftIndex = left.length - 1; leftIndex >= 0; leftIndex--) {
+    for (let rightIndex = right.length - 1; rightIndex >= 0; rightIndex--) {
+      rows[leftIndex][rightIndex] = left[leftIndex] === right[rightIndex]
+        ? rows[leftIndex + 1][rightIndex + 1] + 1
+        : Math.max(rows[leftIndex + 1][rightIndex], rows[leftIndex][rightIndex + 1]);
+    }
+  }
+
+  const diff: DiffRow[] = [];
+  let leftIndex = 0;
+  let rightIndex = 0;
+  while (leftIndex < left.length || rightIndex < right.length) {
+    if (leftIndex < left.length && rightIndex < right.length && left[leftIndex] === right[rightIndex]) {
+      diff.push({ kind: 'same', text: left[leftIndex] });
+      leftIndex++;
+      rightIndex++;
+    } else if (rightIndex >= right.length || (leftIndex < left.length && rows[leftIndex + 1][rightIndex] >= rows[leftIndex][rightIndex + 1])) {
+      diff.push({ kind: 'removed', text: left[leftIndex] });
+      leftIndex++;
+    } else {
+      diff.push({ kind: 'added', text: right[rightIndex] });
+      rightIndex++;
+    }
+  }
+  return diff;
+}
+
 export function HistoryPanel(): JSX.Element {
   const session = useStore((state) => state.session);
+  const currentSource = useStore((state) => state.source);
   const loadSession = useStore((state) => state.loadSession);
   const [points, setPoints] = useState<RecoveryPoint[]>([]);
   const [sources, setSources] = useState<Record<string, string>>({});
   const [status, setStatus] = useState<string | null>(null);
+  const [comparePointId, setComparePointId] = useState<string | null>(null);
 
   const loadHistory = async () => {
     if (!session) return;
@@ -27,6 +64,7 @@ export function HistoryPanel(): JSX.Element {
 
   useEffect(() => {
     setSources({});
+    setComparePointId(null);
     void loadHistory();
   }, [session?.id, session?.revision]);
 
@@ -54,6 +92,15 @@ export function HistoryPanel(): JSX.Element {
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
     }
+  };
+
+  const toggleCompare = (point: RecoveryPoint) => {
+    if (comparePointId === point.id) {
+      setComparePointId(null);
+      return;
+    }
+    setComparePointId(point.id);
+    void showSource(point);
   };
 
   return (
@@ -88,9 +135,34 @@ export function HistoryPanel(): JSX.Element {
                 <summary>Inspect source</summary>
                 <pre>{sources[point.id] ?? 'Loading…'}</pre>
               </details>
-              <button type="button" onClick={() => void restore(point)} disabled={point.revision === session?.revision || Boolean(session?.archived)}>
-                Restore as new revision
-              </button>
+              <div className="history-point-actions">
+                <button
+                  type="button"
+                  onClick={() => toggleCompare(point)}
+                  disabled={point.revision === session?.revision || Boolean(session?.archived)}
+                >
+                  {comparePointId === point.id ? 'Hide comparison' : `Compare revision ${point.revision}`}
+                </button>
+                <button type="button" onClick={() => void restore(point)} disabled={point.revision === session?.revision || Boolean(session?.archived)}>
+                  Restore as new revision
+                </button>
+              </div>
+              {comparePointId === point.id && (
+                <div className="history-diff" role="region" aria-label={`Revision ${point.revision} compared with current`}>
+                  <p>Current revision {session?.revision} · removed lines are red, added lines are green.</p>
+                  {sources[point.id] === undefined ? (
+                    <span className="muted">Loading comparison…</span>
+                  ) : (
+                    <pre>
+                      {diffLines(sources[point.id], currentSource).map((row, index) => (
+                        <span key={`${row.kind}-${index}`} className={`history-diff-${row.kind}`}>
+                          {row.kind === 'added' ? '+ ' : row.kind === 'removed' ? '- ' : '  '}{row.text}{'\n'}
+                        </span>
+                      ))}
+                    </pre>
+                  )}
+                </div>
+              )}
             </li>
           ))}
         </ol>

@@ -85,6 +85,11 @@ test('the packaged browser workflow edits, saves, previews, exports, and restore
   await page.getByRole('button', { name: 'History' }).click();
   await expect(page.getByText('Revision 2', { exact: true })).toBeVisible();
   await expect(page.getByText('Revision 1', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Compare revision 1' }).click();
+  const comparison = page.getByRole('region', { name: 'Revision 1 compared with current' });
+  await expect(comparison).toBeVisible();
+  await expect(comparison).toContainText('Current revision 2');
+  await expect(comparison.locator('.history-diff-added')).toHaveCount(1);
   const restoreButtons = page.getByRole('button', { name: 'Restore as new revision' });
   expect(await restoreButtons.count()).toBe(2);
   await restoreButtons.nth(1).click();
@@ -419,7 +424,11 @@ test('preview supports pointer dragging and direct node label editing', async ({
   await expect(editor).toBeVisible();
   await editor.fill('Begin');
   await editor.press('Enter');
-  await waitForSaved(page, 3);
+  await expect.poll(async () => {
+    const text = await page.locator('.save-status').textContent();
+    const match = /revision (\d+)/.exec(text ?? '');
+    return match ? Number(match[1]) : 0;
+  }).toBeGreaterThanOrEqual(3);
   await expect(page.getByRole('button', { name: 'Node: Begin' })).toBeVisible();
 });
 
@@ -449,6 +458,49 @@ test('preview keeps edge-label dragging separate from canvas panning', async ({ 
   expect(labelBoxAfterDrag!.y - labelBoxBeforeDrag!.y).toBeGreaterThan(10);
 });
 
+test('preview edge-label moves are durable and resettable', async ({ page }) => {
+  const sessionId = await page.evaluate(() => localStorage.getItem('mdve.session'));
+  expect(sessionId).toBeTruthy();
+  await page.getByRole('button', { name: 'Source', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Mermaid source' }).fill(
+    'flowchart TD\n  start[Start] --> decide{Decide}\n  decide -->|yes| build[Build]\n  decide -->|no| wait[Wait]\n',
+  );
+  await waitForSaved(page, 2);
+  await page.getByRole('button', { name: 'Preview', exact: true }).click();
+
+  const yesLabel = page.locator('g.edgeLabel').filter({ hasText: 'yes' });
+  const before = await yesLabel.boundingBox();
+  expect(before).toBeTruthy();
+  await page.mouse.move(before!.x + before!.width / 2, before!.y + before!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(before!.x + before!.width / 2 + 64, before!.y + before!.height / 2 + 24, { steps: 6 });
+  await page.mouse.up();
+
+  await expect.poll(async () => {
+    const response = await page.request.get(`/api/sessions/${sessionId}`);
+    const body = (await response.json()) as { source: string };
+    return body.source.includes('%% mdve:edge-label-position');
+  }).toBe(true);
+  const after = await yesLabel.boundingBox();
+  expect(after).toBeTruthy();
+  expect(after!.x - before!.x).toBeGreaterThan(44);
+  expect(after!.y - before!.y).toBeGreaterThan(12);
+
+  await page.reload();
+  const afterReload = await page.locator('g.edgeLabel').filter({ hasText: 'yes' }).boundingBox();
+  expect(afterReload).toBeTruthy();
+  expect(afterReload!.x - before!.x).toBeGreaterThan(44);
+  expect(afterReload!.y - before!.y).toBeGreaterThan(12);
+
+  await page.getByRole('button', { name: 'Reset saved node positions' }).click();
+  await expect.poll(async () => {
+    const response = await page.request.get(`/api/sessions/${sessionId}`);
+    const body = (await response.json()) as { source: string };
+    return body.source.includes('mdve:edge-label-position');
+  }).toBe(false);
+  await expect(page.getByRole('button', { name: 'Reset saved node positions' })).toBeDisabled();
+});
+
 test('preview context menu can add a node', async ({ page }) => {
   await page.getByRole('button', { name: 'Source', exact: true }).click();
   await page.getByRole('textbox', { name: 'Mermaid source' }).fill('flowchart TD\n  start[Start] --> done[Done]\n');
@@ -472,6 +524,66 @@ test('preview context menu can add a node', async ({ page }) => {
   await waitForSaved(page, 3);
   await expect(page.getByRole('button', { name: 'Node: New node' })).toBeVisible();
   await expect(menu).toBeHidden();
+});
+
+test('preview node moves are durable and resettable', async ({ page }) => {
+  const sessionId = await page.evaluate(() => localStorage.getItem('mdve.session'));
+  expect(sessionId).toBeTruthy();
+  await page.getByRole('button', { name: 'Source', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Mermaid source' }).fill('flowchart TD\n  start[Start] --> done[Done]\n');
+  await waitForSaved(page, 2);
+  await page.getByRole('button', { name: 'Preview', exact: true }).click();
+
+  const node = page.getByRole('button', { name: 'Node: Start' });
+  const before = await node.boundingBox();
+  expect(before).toBeTruthy();
+  await page.mouse.move(before!.x + before!.width / 2, before!.y + before!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(before!.x + before!.width / 2 + 84, before!.y + before!.height / 2 + 32, { steps: 6 });
+  await page.mouse.up();
+  await expect.poll(async () => (await page.request.get(`/api/sessions/${sessionId}`)).status()).toBe(200);
+  await expect.poll(async () => {
+    const response = await page.request.get(`/api/sessions/${sessionId}`);
+    const body = (await response.json()) as { source: string };
+    return body.source.includes('%% mdve:position start');
+  }).toBe(true);
+
+  const after = await node.boundingBox();
+  expect(after).toBeTruthy();
+  expect(after!.x - before!.x).toBeGreaterThan(60);
+  expect(after!.y - before!.y).toBeGreaterThan(20);
+  const movedSource = await page.request.get(`/api/sessions/${sessionId}`);
+  expect((await movedSource.json()).source).toContain('%% mdve:position start');
+
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Node: Start' })).toBeVisible();
+  const afterReload = await page.getByRole('button', { name: 'Node: Start' }).boundingBox();
+  expect(afterReload).toBeTruthy();
+  expect(afterReload!.x - before!.x).toBeGreaterThan(60);
+  expect(afterReload!.y - before!.y).toBeGreaterThan(20);
+
+  await page.getByRole('button', { name: 'Reset saved node positions' }).click();
+  await expect.poll(async () => {
+    const response = await page.request.get(`/api/sessions/${sessionId}`);
+    const body = (await response.json()) as { source: string };
+    return body.source.includes('%% mdve:position');
+  }).toBe(false);
+  await expect(page.getByRole('button', { name: 'Reset saved node positions' })).toBeDisabled();
+});
+
+test('preview context menu can create a link between nodes', async ({ page }) => {
+  await page.getByRole('button', { name: 'Source', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Mermaid source' }).fill('flowchart TD\n  start[Start]\n  done[Done]\n');
+  await waitForSaved(page, 2);
+  await page.getByRole('button', { name: 'Preview', exact: true }).click();
+
+  await page.getByRole('button', { name: 'Node: Start' }).click({ button: 'right' });
+  const menu = page.getByRole('menu', { name: 'Preview context menu' });
+  await menu.getByRole('menuitem', { name: 'Start link' }).click();
+  await expect(page.getByRole('status')).toContainText('Link from Start');
+  await page.getByRole('button', { name: 'Node: Done' }).click();
+  await expect(page.locator('path.mdve-hit[aria-label="Link: start to done"]')).toHaveCount(1);
+  await expect(page.getByRole('status')).toBeHidden();
 });
 
 test('preview context menu edits and deletes a node', async ({ page }) => {

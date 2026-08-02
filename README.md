@@ -55,20 +55,25 @@ run `npm run desktop:build`. The AppImage is written to `release/desktop/` and u
 same authenticated loopback server, `~/.mdve` data directory, and Mermaid/UI
 code as the CLI/browser path.
 
-On a desktop layout, drag the Preview canvas to pan, click a rendered node to
-edit its label inline, use the close/open controls to hide or restore the
-Source and right panels, and drag either vertical divider to resize the
-workbench. Right-click blank preview space to add a node, or right-click a node
-or link for its contextual edit/delete actions. The divider also supports
-keyboard arrow resizing when focused.
+On a desktop layout, drag the Preview canvas to pan, drag a rendered node or
+edge label to reposition it, and click a rendered node to edit its label inline.
+Node and edge-label positions are saved as Mermaid-safe `%% mdve:` comments, so
+they survive reloads, undo/history, export, and agent turns; Reset saved node
+positions removes that presentation metadata. Right-click blank preview space
+to add a node at that location, or right-click a node and choose Start link,
+then select its target. The close/open controls hide or restore the Source and
+right panels, and either vertical divider resizes the workbench. Dividers also
+support keyboard arrow resizing when focused.
 
 ## The workbench
 
 - Source is CodeMirror over the canonical Mermaid text.
-- Preview renders the same text; nodes and links can be selected, zoomed, and panned.
+- Preview renders the same text; nodes and links can be selected, edited, linked,
+  zoomed, panned, and repositioned with durable layout state.
 - Inspector provides byte-preserving structured edits for `flowchart` and `graph` diagrams.
 - Agent runs Codex in the Diagram workspace and streams progress into a durable Conversation.
-- History lists immutable, checksummed recovery points and restores a point as a new revision.
+- History lists immutable, checksummed recovery points, compares a point with
+  the current revision, and restores a point as a new revision.
 
 Other Mermaid grammars remain renderable and source-editable, but structured
 visual mutation is intentionally unavailable when MDVE cannot prove that it is
@@ -113,15 +118,15 @@ The development-only `PORT` and `HOST` aliases are also accepted by the server.
 
 ## Development status
 
-The current development baseline is version `1.0.0`. Work continues
-iteratively on `master`; this repository state is not an official npm or
-GitHub publication. The release-gate harness remains available for a future
+The package baseline remains version `1.0.0`; work continues iteratively on
+`master` toward the v2 workbench. This repository state is not an official npm
+or GitHub publication. The release-gate harness remains available for a future
 public distribution, but publication-only owner, legal, registry, and
 trusted-publishing gates do not block normal development.
 
 ## Scope
 
-MDVE V1 is a local Linux application for individual technical users who already
-use Mermaid and Codex. Hosted sync, accounts, real-time collaboration, a
-free-form canvas, mobile editing, and additional agent providers are outside
-the first release.
+MDVE is a local Linux application for individual technical users who already
+use Mermaid and Codex. Hosted sync, accounts, real-time collaboration, a fully
+free-form canvas, mobile editing, and additional agent providers remain outside
+the current workbench boundary.
