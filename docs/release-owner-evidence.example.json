@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "candidateCommit": "REPLACE_WITH_THE_FULL_40_CHARACTER_CANDIDATE_SHA",
+  "packageVersion": "1.0.0",
+  "releaseOwner": "REPLACE_WITH_RELEASE_OWNER",
+  "attestedAt": "2026-08-02T00:00:00Z",
+  "manualAccessibility": {
+    "status": "passed",
+    "artifact": "REPLACE_WITH_WCAG_ORCA_MATRIX_REFERENCE",
+    "tester": "REPLACE_WITH_TESTER",
+    "date": "2026-08-02"
+  },
+  "liveCodex": {
+    "status": "passed",
+    "artifact": "REPLACE_WITH_LIVE_CODEX_RUN_REFERENCE",
+    "tester": "REPLACE_WITH_TESTER",
+    "runtime": "0.146.0",
+    "date": "2026-08-02"
+  },
+  "legal": {
+    "status": "approved",
+    "reference": "REPLACE_WITH_QUALIFIED_COUNSEL_REFERENCE",
+    "approver": "REPLACE_WITH_COUNSEL",
+    "date": "2026-08-02"
+  },
+  "registryName": {
+    "status": "available",
+    "package": "mdve",
+    "reference": "REPLACE_WITH_REGISTRY_NAME_CHECK_REFERENCE",
+    "checkedAt": "2026-08-02"
+  },
+  "previousStable": {
+    "status": "verified",
+    "version": "REPLACE_WITH_SEPARATELY_BUILT_PREVIOUS_VERSION",
+    "integrity": "sha512-REPLACE_WITH_PREVIOUS_ARTIFACT_INTEGRITY",
+    "artifact": "REPLACE_WITH_PREVIOUS_ARTIFACT_REFERENCE"
+  },
+  "lifecycle": {
+    "status": "verified",
+    "artifact": "REPLACE_WITH_LIFECYCLE_EVIDENCE_REFERENCE",
+    "checkedAt": "2026-08-02"
+  }
+}
