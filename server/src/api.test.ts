@@ -108,6 +108,23 @@ test('authenticated API preserves revision, history, conversation, and archive c
     assert.equal(searched.status, 200);
     assert.equal((await searched.json()).sessions.length, 1);
 
+    const duplicated = await fetch(`${base}/api/sessions`, {
+      method: 'POST',
+      headers: { ...jsonHeaders, cookie },
+      body: JSON.stringify({ title: 'Copied diagram', source }),
+    });
+    assert.equal(duplicated.status, 201);
+    const duplicate = (await duplicated.json()).session as { id: string; revision: number; title: string };
+    assert.equal(duplicate.title, 'Copied diagram');
+    assert.equal(duplicate.revision, 1);
+    const duplicateState = await fetch(`${base}/api/sessions/${duplicate.id}`, { headers: { cookie } });
+    assert.equal(duplicateState.status, 200);
+    assert.equal((await duplicateState.json()).source, source);
+    const duplicateTrashed = await fetch(`${base}/api/sessions/${duplicate.id}/trash`, { method: 'POST', headers: { cookie } });
+    assert.equal(duplicateTrashed.status, 200);
+    const duplicateDeleted = await fetch(`${base}/api/sessions/${duplicate.id}`, { method: 'DELETE', headers: { cookie } });
+    assert.equal(duplicateDeleted.status, 200);
+
     const history = await fetch(`${base}/api/sessions/${starter.id}/history`, { headers: { cookie } });
     assert.equal(history.status, 200);
     const historyPoints = (await history.json()).history as Array<{ id: string; revision: number }>;

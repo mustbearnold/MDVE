@@ -17,5 +17,12 @@ export default defineConfig({
     outDir: '../dist/web',
     emptyOutDir: true,
     sourcemap: false,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.endsWith('/web/src/mermaid/model.ts')) return 'semantic-model';
+        },
+      },
+    },
   },
 });

@@ -1,18 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { SHAPES, ShapeName, isReservedId, supportsStructuredEditing } from '../mermaid/parse';
-import {
-  addEdge,
-  deleteEdge,
-  deleteNode,
-  hasOpaqueLinkIndexReferences,
-  hasOpaqueNodeReferences,
-  renameNodeId,
-  setEdgeArrow,
-  setEdgeLabel,
-  setNodeLabel,
-  setNodeShape,
-} from '../mermaid/mutate';
+import { hasOpaqueLinkIndexReferences, hasOpaqueNodeReferences } from '../mermaid/mutate';
 import { useStore } from '../state/store';
 
 const ARROWS: { value: string; label: string }[] = [
@@ -27,9 +16,10 @@ const ARROWS: { value: string; label: string }[] = [
 export function Inspector(): JSX.Element {
   const selection = useStore((s) => s.selection);
   const diagram = useStore((s) => s.diagram);
+  const diagramModel = useStore((s) => s.diagramModel);
   const source = useStore((s) => s.source);
   const renderError = useStore((s) => s.renderError);
-  const setSource = useStore((s) => s.setSource);
+  const applyTransaction = useStore((s) => s.applyTransaction);
   const select = useStore((s) => s.select);
 
   const node = selection.kind === 'node' ? diagram.nodes.find((n) => n.id === selection.id) : undefined;
@@ -41,6 +31,10 @@ export function Inspector(): JSX.Element {
   useEffect(() => setIdDraft(node?.id ?? ''), [node?.id]);
 
   const idReserved = idDraft.trim() !== '' && isReservedId(idDraft.trim());
+
+  const selectedNodeIds = selection.kind === 'nodes'
+    ? selection.ids.filter((id) => diagram.nodes.some((candidate) => candidate.id === id))
+    : [];
 
   if (!supportsStructuredEditing(diagram, renderError)) {
     return (
@@ -67,7 +61,10 @@ export function Inspector(): JSX.Element {
           Label
           <input
             value={node.label}
-            onChange={(e) => setSource(setNodeLabel(source, node.id, e.target.value))}
+            onChange={(e) => applyTransaction({
+              title: 'Edit node label',
+              operations: [{ kind: 'node.set-label', nodeId: node.id, label: e.target.value }],
+            })}
           />
         </label>
 
@@ -78,7 +75,10 @@ export function Inspector(): JSX.Element {
             <button
               disabled={idDraft === node.id || idDraft.trim() === '' || idReserved || opaqueNodeReference}
               onClick={() => {
-                setSource(renameNodeId(source, node.id, idDraft.trim()));
+                applyTransaction({
+                  title: 'Rename node',
+                  operations: [{ kind: 'node.rename', nodeId: node.id, nextId: idDraft.trim() }],
+                });
                 select({ kind: 'node', id: idDraft.trim() });
               }}
             >
@@ -95,7 +95,10 @@ export function Inspector(): JSX.Element {
           Shape
           <select
             value={node.shape}
-            onChange={(e) => setSource(setNodeShape(source, node.id, e.target.value as ShapeName))}
+            onChange={(e) => applyTransaction({
+              title: 'Change node shape',
+              operations: [{ kind: 'node.set-shape', nodeId: node.id, shape: e.target.value as ShapeName }],
+            })}
           >
             {SHAPES.map((s) => (
               <option key={s.name} value={s.name}>
@@ -121,7 +124,10 @@ export function Inspector(): JSX.Element {
             <button
               disabled={!edgeTarget}
               onClick={() => {
-                setSource(addEdge(source, node.id, edgeTarget));
+                applyTransaction({
+                  title: 'Connect nodes',
+                  operations: [{ kind: 'edge.add', from: node.id, to: edgeTarget }],
+                });
                 setEdgeTarget('');
               }}
             >
@@ -139,7 +145,7 @@ export function Inspector(): JSX.Element {
           disabled={deleteBlocked}
           title={deleteBlocked ? 'Delete unavailable while source-only syntax depends on this node or its links' : undefined}
           onClick={() => {
-            setSource(deleteNode(source, node.id));
+            applyTransaction({ title: 'Delete node', operations: [{ kind: 'node.delete', nodeId: node.id }] });
             select({ kind: 'none' });
           }}
         >
@@ -149,8 +155,54 @@ export function Inspector(): JSX.Element {
     );
   }
 
+  if (selection.kind === 'nodes' && selectedNodeIds.length > 0) {
+    const canDelete = selectedNodeIds.every((id) => !hasOpaqueNodeReferences(source, id));
+    const edgeIds = diagramModel.edges
+      .filter((edge) => selectedNodeIds.includes(edge.from) || selectedNodeIds.includes(edge.to))
+      .map((edge) => edge.id);
+    return (
+      <aside className="inspector inspector-selection">
+        <h2>Selection</h2>
+        <p className="muted">{selectedNodeIds.length} nodes selected · Shift-click to add or remove nodes.</p>
+        <div className="inspector-meta">
+          <span>Align or distribute the selection as one edit transaction.</span>
+        </div>
+        <div className="inspector-action-grid" aria-label="Selection layout actions">
+          <button type="button" onClick={() => applyTransaction({ title: 'Align nodes vertically', operations: [{ kind: 'layout.align', nodeIds: selectedNodeIds, axis: 'x' }] })}>
+            Align vertical
+          </button>
+          <button type="button" onClick={() => applyTransaction({ title: 'Align nodes horizontally', operations: [{ kind: 'layout.align', nodeIds: selectedNodeIds, axis: 'y' }] })}>
+            Align horizontal
+          </button>
+          <button type="button" disabled={selectedNodeIds.length < 3} onClick={() => applyTransaction({ title: 'Distribute nodes horizontally', operations: [{ kind: 'layout.distribute', nodeIds: selectedNodeIds, axis: 'x' }] })}>
+            Distribute ↔
+          </button>
+          <button type="button" disabled={selectedNodeIds.length < 3} onClick={() => applyTransaction({ title: 'Distribute nodes vertically', operations: [{ kind: 'layout.distribute', nodeIds: selectedNodeIds, axis: 'y' }] })}>
+            Distribute ↕
+          </button>
+        </div>
+        <button
+          type="button"
+          className="danger"
+          disabled={!canDelete || (edgeIds.length > 0 && hasOpaqueLinkIndexReferences(source))}
+          onClick={() => {
+            applyTransaction({
+              title: `Delete ${selectedNodeIds.length} nodes`,
+              operations: selectedNodeIds.map((nodeId) => ({ kind: 'node.delete' as const, nodeId })),
+            });
+            select({ kind: 'none' });
+          }}
+        >
+          Delete selected
+        </button>
+      </aside>
+    );
+  }
+
   if (edge) {
     const deleteBlocked = hasOpaqueLinkIndexReferences(source);
+    const semanticEdge = diagramModel.edges.find((candidate) => candidate.sourceKey === edge.key);
+    const edgeId = semanticEdge?.id ?? edge.key;
     return (
       <aside className="inspector">
         <h2>Link</h2>
@@ -163,13 +215,19 @@ export function Inspector(): JSX.Element {
           <input
             value={edge.label ?? ''}
             placeholder="none"
-            onChange={(e) => setSource(setEdgeLabel(source, edge.key, e.target.value))}
+            onChange={(e) => applyTransaction({
+              title: 'Edit link label',
+              operations: [{ kind: 'edge.set-label', edgeId, label: e.target.value }],
+            })}
           />
         </label>
 
         <label>
           Style
-          <select value={edge.arrow} onChange={(e) => setSource(setEdgeArrow(source, edge.key, e.target.value))}>
+          <select value={edge.arrow} onChange={(e) => applyTransaction({
+            title: 'Change link style',
+            operations: [{ kind: 'edge.set-arrow', edgeId, arrow: e.target.value }],
+          })}>
             {ARROWS.some((a) => a.value === edge.arrow) ? null : (
               <option value={edge.arrow}>{edge.arrow}</option>
             )}
@@ -186,7 +244,7 @@ export function Inspector(): JSX.Element {
           disabled={deleteBlocked}
           title={deleteBlocked ? 'Delete unavailable while source-only linkStyle syntax depends on link indexes' : undefined}
           onClick={() => {
-            setSource(deleteEdge(source, edge.key));
+            applyTransaction({ title: 'Delete link', operations: [{ kind: 'edge.delete', edgeId }] });
             select({ kind: 'none' });
           }}
         >

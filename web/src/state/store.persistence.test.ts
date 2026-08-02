@@ -144,3 +144,72 @@ test('a newer Diagram load cannot be overwritten by a slower background load', a
     globalThis.localStorage = originalLocalStorage;
   }
 });
+
+test('agent source changes become reviewable proposals with keep and reject boundaries', async () => {
+  const before = 'flowchart TD\n  start[Start] --> done[Done]\n';
+  const after = 'flowchart TD\n  start[Begin] --> done[Done]\n';
+  useStore.setState({
+    session: null,
+    source: before,
+    agentProposal: null,
+    busy: false,
+    past: [],
+    future: [],
+  });
+
+  useStore.getState().beginAgentProposal();
+  useStore.getState().stageAgentSource(after, { revision: 2 });
+  assert.equal(useStore.getState().agentProposal?.before, before);
+  assert.equal(useStore.getState().agentProposal?.after, after);
+  assert.deepEqual(useStore.getState().agentProposal?.delta.changedNodes, ['start']);
+  assert.equal(useStore.getState().revision, 2);
+
+  useStore.getState().rejectAgentProposal();
+  assert.equal(useStore.getState().source, before);
+  assert.equal(useStore.getState().agentProposal, null);
+
+  useStore.getState().beginAgentProposal();
+  useStore.getState().stageAgentSource(after);
+  await useStore.getState().acceptAgentProposal();
+  assert.equal(useStore.getState().source, after);
+  assert.equal(useStore.getState().agentProposal, null);
+});
+
+test('keeping an agent proposal commits against its starting revision', async () => {
+  const originalFetch = globalThis.fetch;
+  const before = 'flowchart TD\n  start[Start] --> done[Done]\n';
+  const after = 'flowchart TD\n  start[Begin] --> done[Done]\n';
+  let request: { path: string; body: { source: string; expectedRevision: number; origin: string } } | undefined;
+
+  globalThis.fetch = (async (input, init) => {
+    request = {
+      path: String(input),
+      body: JSON.parse(String(init?.body)) as { source: string; expectedRevision: number; origin: string },
+    };
+    return Response.json({ ok: true, revision: 3, checksum: 'accepted', historyAvailable: true });
+  }) as typeof fetch;
+
+  try {
+    useStore.setState({
+      session: { ...session('proposal'), revision: 2 },
+      source: before,
+      revision: 2,
+      agentProposal: null,
+      busy: false,
+      saveStatus: { state: 'saved' },
+      past: [],
+      future: [],
+    });
+    useStore.getState().beginAgentProposal();
+    useStore.getState().stageAgentSource(after);
+    await useStore.getState().acceptAgentProposal();
+
+    assert.equal(request?.path, '/api/sessions/proposal/diagram');
+    assert.deepEqual(request?.body, { source: after, expectedRevision: 2, origin: 'manual' });
+    assert.equal(useStore.getState().revision, 3);
+    assert.equal(useStore.getState().source, after);
+    assert.equal(useStore.getState().agentProposal, null);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

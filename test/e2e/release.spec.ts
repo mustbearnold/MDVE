@@ -128,6 +128,24 @@ test('the diagram library exposes Recent, Archived, and recoverable Trash scopes
   await expect(page.locator('.cm-content')).toHaveAttribute('contenteditable', 'false');
 });
 
+test('the diagram library can duplicate a source-backed diagram', async ({ page }) => {
+  await page.getByRole('button', { name: 'Source', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Mermaid source' }).fill('flowchart LR\n  start[Start] --> finish[Finish]\n');
+  await waitForSaved(page, 2);
+
+  const originalId = await page.locator('#diagram-select').inputValue();
+  const menu = page.locator('summary').filter({ hasText: 'Diagram' });
+  await menu.click();
+  await page.getByRole('button', { name: 'Duplicate diagram' }).click();
+
+  await expect.poll(() => page.locator('#diagram-select').inputValue()).not.toBe(originalId);
+  await expect(page.locator('#diagram-select option:checked')).toHaveText(/Copy of/);
+  await expect(page.getByRole('button', { name: 'Preview', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Preview', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Node: Start' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Node: Finish' })).toBeVisible();
+});
+
 test('durable conversations and every workbench state have accessible names', async ({ page }) => {
   for (const view of ['Preview', 'Source', 'Inspector', 'Agent', 'History']) {
     await page.getByRole('button', { name: view, exact: true }).click();
@@ -569,6 +587,45 @@ test('preview node moves are durable and resettable', async ({ page }) => {
     return body.source.includes('%% mdve:position');
   }).toBe(false);
   await expect(page.getByRole('button', { name: 'Reset saved node positions' })).toBeDisabled();
+});
+
+test('v3 canvas selection groups nodes and commits one layout transaction', async ({ page }) => {
+  const sessionId = await page.evaluate(() => localStorage.getItem('mdve.session'));
+  expect(sessionId).toBeTruthy();
+  await page.getByRole('button', { name: 'Source', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Mermaid source' }).fill(
+    'flowchart TD\n  alpha[Alpha]\n  beta[Beta]\n  gamma[Gamma]\n',
+  );
+  await waitForSaved(page, 2);
+  await page.getByRole('button', { name: 'Preview', exact: true }).click();
+
+  await page.getByRole('button', { name: 'Node: Alpha' }).click({ modifiers: ['Shift'] });
+  await page.getByRole('button', { name: 'Node: Beta' }).click({ modifiers: ['Shift'] });
+  await page.getByRole('button', { name: 'Inspector', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Selection', exact: true })).toBeVisible();
+  await expect(page.getByText('2 nodes selected · Shift-click to add or remove nodes.')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Align vertical' }).click();
+  await waitForSaved(page, 3);
+  await expect.poll(async () => {
+    const response = await page.request.get(`/api/sessions/${sessionId}`);
+    const body = (await response.json()) as { source: string };
+    return body.source.includes('%% mdve:position alpha') && body.source.includes('%% mdve:position beta');
+  }).toBe(true);
+
+  await page.getByRole('button', { name: 'Preview', exact: true }).click();
+  const alpha = page.getByRole('button', { name: 'Node: Alpha' });
+  const before = await alpha.boundingBox();
+  expect(before).toBeTruthy();
+  await page.mouse.move(before!.x + before!.width / 2, before!.y + before!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(before!.x + before!.width / 2 + 48, before!.y + before!.height / 2 + 18, { steps: 5 });
+  await page.mouse.up();
+  await expect.poll(async () => {
+    const response = await page.request.get(`/api/sessions/${sessionId}`);
+    const body = (await response.json()) as { source: string };
+    return body.source.includes('%% mdve:position alpha') && body.source.includes('%% mdve:position beta');
+  }).toBe(true);
 });
 
 test('preview context menu can create a link between nodes', async ({ page }) => {

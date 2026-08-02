@@ -66,7 +66,7 @@ export function OutlinePanel(): JSX.Element {
               {nodes.length > 0 ? (
                 <ul className="outline-list">
                   {nodes.map((node) => {
-                    const active = selection.kind === 'node' && selection.id === node.id;
+                    const active = (selection.kind === 'node' && selection.id === node.id) || (selection.kind === 'nodes' && selection.ids.includes(node.id));
                     return (
                       <li key={node.id}>
                         <button
@@ -74,7 +74,17 @@ export function OutlinePanel(): JSX.Element {
                           type="button"
                           aria-pressed={active}
                           aria-label={`Select node ${node.label} (${node.id})`}
-                          onClick={() => selectItem({ kind: 'node', id: node.id })}
+                          onClick={(event) => {
+                            if (!event.shiftKey) {
+                              selectItem({ kind: 'node', id: node.id });
+                              return;
+                            }
+                            const ids = selection.kind === 'nodes'
+                              ? selection.ids
+                              : selection.kind === 'node' ? [selection.id] : [];
+                            const next = ids.includes(node.id) ? ids.filter((id) => id !== node.id) : [...ids, node.id];
+                            selectItem(next.length > 0 ? { kind: 'nodes', ids: next } : { kind: 'none' });
+                          }}
                         >
                           <span className="outline-item-icon" aria-hidden="true"><Icon name="node" /></span>
                           <span className="outline-item-copy">
@@ -132,7 +142,7 @@ export function OutlinePanel(): JSX.Element {
 
       {selection.kind !== 'none' && (
         <footer className="outline-footer">
-          <span>Selected {selection.kind}</span>
+          <span>{selection.kind === 'nodes' ? `${selection.ids.length} nodes selected` : `Selected ${selection.kind}`}</span>
           <button type="button" onClick={() => select({ kind: 'none' })}>Clear</button>
         </footer>
       )}

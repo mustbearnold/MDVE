@@ -1,7 +1,5 @@
 import { useRef, type RefObject } from 'react';
 
-import { addNode } from '../mermaid/mutate';
-import { setDirection } from '../mermaid/mutate';
 import { supportsStructuredEditing } from '../mermaid/parse';
 import { useStore, type LibraryScope } from '../state/store';
 import { Icon } from './Icon';
@@ -25,6 +23,7 @@ function download(name: string, content: string, type: string): void {
 export function Toolbar(): JSX.Element {
   const source = useStore((s) => s.source);
   const setSource = useStore((s) => s.setSource);
+  const applyTransaction = useStore((s) => s.applyTransaction);
   const select = useStore((s) => s.select);
   const diagram = useStore((s) => s.diagram);
   const renderError = useStore((s) => s.renderError);
@@ -37,6 +36,7 @@ export function Toolbar(): JSX.Element {
   const setLibrarySearch = useStore((s) => s.setLibrarySearch);
   const loadSession = useStore((s) => s.loadSession);
   const newSession = useStore((s) => s.newSession);
+  const duplicateSession = useStore((s) => s.duplicateSession);
   const renameSession = useStore((s) => s.renameSession);
   const archiveSession = useStore((s) => s.archiveSession);
   const restoreSession = useStore((s) => s.restoreSession);
@@ -51,6 +51,9 @@ export function Toolbar(): JSX.Element {
   const promoteDraft = useStore((s) => s.promoteDraft);
   const retrySave = useStore((s) => s.retrySave);
   const resolveConflict = useStore((s) => s.resolveConflict);
+  const busy = useStore((s) => s.busy);
+  const agentProposal = useStore((s) => s.agentProposal);
+  const proposalPending = Boolean(agentProposal && agentProposal.after !== agentProposal.before);
   const fileRef = useRef<HTMLInputElement>(null);
   const diagramMenuRef = useRef<HTMLDetailsElement>(null);
   const fileMenuRef = useRef<HTMLDetailsElement>(null);
@@ -151,8 +154,10 @@ export function Toolbar(): JSX.Element {
           placeholder="Search diagrams"
           onChange={(event) => setLibrarySearch(event.target.value)}
         />
-        <span className={`save-status save-${saveStatus.state}`} aria-live="polite">
-          {saveStatus.state === 'error' ? (
+        <span className={`save-status save-${proposalPending ? 'saving' : saveStatus.state}`} aria-live="polite">
+          {proposalPending ? (
+            <><span className="status-dot status-warning" />Proposal pending · base revision {agentProposal?.revision ?? revision}</>
+          ) : saveStatus.state === 'error' ? (
             <button className="save-retry" onClick={retrySave} title={saveStatus.message}>
               Save failed · Retry
             </button>
@@ -196,9 +201,10 @@ export function Toolbar(): JSX.Element {
           disabled={!structuredEditingAvailable}
           title={!structuredEditingAvailable ? 'Structured editing requires a valid flowchart / graph diagram' : undefined}
           onClick={() => {
-            const { source: next, id } = addNode(source);
-            setSource(next);
-            if (id) select({ kind: 'node', id });
+            const existing = new Set(diagram.nodes.map((node) => node.id));
+            const applied = applyTransaction({ title: 'Add node', operations: [{ kind: 'node.add' }] });
+            const added = applied?.model.nodes.find((node) => !existing.has(node.id));
+            if (added) select({ kind: 'node', id: added.id });
           }}
         >
           <Icon name="plus" />
@@ -209,7 +215,10 @@ export function Toolbar(): JSX.Element {
           <select
             value={diagram.direction}
             disabled={!structuredEditingAvailable}
-            onChange={(e) => setSource(setDirection(source, e.target.value))}
+            onChange={(e) => applyTransaction({
+              title: 'Change diagram direction',
+              operations: [{ kind: 'diagram.set-direction', direction: e.target.value }],
+            })}
             aria-label="Layout direction"
           >
             {DIRECTIONS.map((direction) => (
@@ -230,6 +239,16 @@ export function Toolbar(): JSX.Element {
       <details className="toolbar-menu" ref={diagramMenuRef}>
         <summary>Diagram</summary>
         <div className="toolbar-menu-panel">
+          <button
+            disabled={!session || busy || Boolean(agentProposal)}
+            title={agentProposal ? 'Keep or reject the current agent proposal first' : undefined}
+            onClick={() => {
+              closeMenu(diagramMenuRef);
+              void duplicateSession();
+            }}
+          >
+            Duplicate diagram
+          </button>
           <button
             onClick={() => {
               closeMenu(diagramMenuRef);

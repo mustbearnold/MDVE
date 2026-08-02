@@ -91,11 +91,11 @@ export const api = {
     return req<{ session: SessionMeta }>(`/api/startup${query}`);
   },
 
-  createSession: (title?: string) =>
+  createSession: (title?: string, source?: string) =>
     req<{ session: SessionMeta }>('/api/sessions', {
       method: 'POST',
       headers: json,
-      body: JSON.stringify({ title }),
+      body: JSON.stringify({ title, source }),
     }),
 
   getSession: (id: string) =>

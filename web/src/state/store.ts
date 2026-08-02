@@ -1,6 +1,16 @@
 import { create } from 'zustand';
 
 import { AgentEvent, ConversationRecord, ProviderInfo, SessionMeta, api } from '../api';
+import {
+  applyDiagramTransaction as applyModelTransaction,
+  buildSemanticDiagram,
+  compareSemanticDiagrams,
+  type AppliedTransaction,
+  type DiagramTransaction,
+  type SemanticDiagram,
+  type SemanticDelta,
+  type TransactionRequest,
+} from '../mermaid/model';
 import { Diagram, parseDiagram } from '../mermaid/parse';
 import { clearRecoveryDraft, readRecoveryDraft, writeRecoveryDraft, type RecoveryDraft } from './drafts';
 import { createDiagramPersistence, type SaveStatus } from './persistence';
@@ -8,6 +18,7 @@ import { createDiagramPersistence, type SaveStatus } from './persistence';
 export type Selection =
   | { kind: 'none' }
   | { kind: 'node'; id: string }
+  | { kind: 'nodes'; ids: string[] }
   | { kind: 'edge'; key: string };
 
 export type LibraryScope = 'recent' | 'all' | 'archived' | 'trash';
@@ -22,6 +33,13 @@ export interface ChatMessage {
   error?: boolean;
 }
 
+export interface AgentProposal {
+  before: string;
+  after: string;
+  delta: SemanticDelta;
+  revision?: number;
+}
+
 interface Store {
   session: SessionMeta | null;
   sessions: SessionMeta[];
@@ -33,10 +51,13 @@ interface Store {
 
   source: string;
   diagram: Diagram;
+  diagramModel: SemanticDiagram;
   revision: number;
   draftStatus: 'clear' | 'available' | 'degraded';
   recoveryDraft: RecoveryDraft | null;
   selection: Selection;
+  lastTransaction: DiagramTransaction | null;
+  agentProposal: AgentProposal | null;
   renderError: string | null;
   saveStatus: SaveStatus;
 
@@ -51,12 +72,17 @@ interface Store {
   effort: string;
 
   setSource: (source: string, opts?: { history?: boolean; persist?: boolean }) => void;
+  applyTransaction: (request: TransactionRequest) => AppliedTransaction | null;
   select: (selection: Selection) => void;
   setRenderError: (error: string | null) => void;
   undo: () => void;
   redo: () => void;
   retrySave: () => void;
   setRevision: (revision: number) => void;
+  beginAgentProposal: () => void;
+  stageAgentSource: (source: string, state?: { revision?: number }) => void;
+  acceptAgentProposal: () => Promise<void>;
+  rejectAgentProposal: () => void;
   promoteDraft: () => void;
   resolveConflict: (choice: 'local' | 'current') => void;
 
@@ -65,6 +91,7 @@ interface Store {
   setLibraryScope: (scope: LibraryScope) => void;
   setLibrarySearch: (search: string) => void;
   newSession: () => Promise<void>;
+  duplicateSession: () => Promise<void>;
   renameSession: (title: string) => Promise<void>;
   archiveSession: () => Promise<void>;
   restoreSession: () => Promise<void>;
@@ -131,10 +158,13 @@ export const useStore = create<Store>((set, get) => ({
 
   source: '',
   diagram: parseDiagram(''),
+  diagramModel: buildSemanticDiagram(''),
   revision: 0,
   draftStatus: 'clear',
   recoveryDraft: null,
   selection: { kind: 'none' },
+  lastTransaction: null,
+  agentProposal: null,
   renderError: null,
   saveStatus: { state: 'saved' },
 
@@ -149,13 +179,14 @@ export const useStore = create<Store>((set, get) => ({
   effort: '',
 
   setSource: (source, opts = {}) => {
-    const { source: previous, session } = get();
+    const { source: previous, session, renderError } = get();
     if (source === previous) return;
     if (session && opts.persist !== false && (session.archived || session.trashed || session.agentLease)) return;
     const history = opts.history !== false;
     set((state) => ({
       source,
       diagram: parseDiagram(source),
+      diagramModel: buildSemanticDiagram(source, renderError),
       past: history ? [...state.past, previous].slice(-HISTORY_LIMIT) : state.past,
       future: history ? [] : state.future,
     }));
@@ -167,8 +198,28 @@ export const useStore = create<Store>((set, get) => ({
     }
   },
 
-  select: (selection) => set({ selection }),
-  setRenderError: (renderError) => set({ renderError }),
+  applyTransaction: (request) => {
+    const { source, session } = get();
+    if (session?.archived || session?.trashed || session?.agentLease) return null;
+    try {
+      const applied = applyModelTransaction(source, request);
+      if (applied.changed) get().setSource(applied.source);
+      set({ diagramModel: applied.model, lastTransaction: applied.transaction });
+      return applied;
+    } catch {
+      return null;
+    }
+  },
+
+  select: (selection) => set({
+    selection: selection.kind === 'nodes'
+      ? selection.ids.length > 0 ? { kind: 'nodes', ids: [...new Set(selection.ids)] } : { kind: 'none' }
+      : selection,
+  }),
+  setRenderError: (renderError) => set((state) => ({
+    renderError,
+    diagramModel: buildSemanticDiagram(state.source, renderError),
+  })),
 
   undo: () => {
     const { past, source, future, session } = get();
@@ -177,6 +228,7 @@ export const useStore = create<Store>((set, get) => ({
     set({
       source: previous,
       diagram: parseDiagram(previous),
+      diagramModel: buildSemanticDiagram(previous, get().renderError),
       past: past.slice(0, -1),
       future: [source, ...future].slice(0, HISTORY_LIMIT),
     });
@@ -190,6 +242,7 @@ export const useStore = create<Store>((set, get) => ({
     set({
       source: next,
       diagram: parseDiagram(next),
+      diagramModel: buildSemanticDiagram(next, get().renderError),
       past: [...past, source].slice(-HISTORY_LIMIT),
       future: future.slice(1),
     });
@@ -207,6 +260,63 @@ export const useStore = create<Store>((set, get) => ({
       session: state.session ? { ...state.session, revision } : state.session,
     })),
 
+  beginAgentProposal: () => {
+    const { source, revision } = get();
+    set({ agentProposal: { before: source, after: source, delta: compareSemanticDiagrams(source, source), revision } });
+  },
+
+  stageAgentSource: (source, revisionState) => {
+    const current = get();
+    const baseline = current.agentProposal?.before ?? current.source;
+    const firstChange = !current.agentProposal || current.agentProposal.after === baseline;
+    if (source !== current.source) {
+      current.setSource(source, { persist: false, history: firstChange });
+    }
+    set((state) => ({
+      agentProposal: {
+        before: baseline,
+        after: source,
+        delta: compareSemanticDiagrams(baseline, source),
+        revision: revisionState?.revision,
+      },
+      ...(revisionState?.revision !== undefined ? {
+        revision: revisionState.revision,
+        session: state.session ? { ...state.session, revision: revisionState.revision } : state.session,
+      } : {}),
+    }));
+  },
+
+  acceptAgentProposal: async () => {
+    const { agentProposal, session, busy, revision } = get();
+    if (!agentProposal || busy) return;
+    if (agentProposal.after === agentProposal.before || !session) {
+      set({ agentProposal: null });
+      return;
+    }
+    try {
+      const result = await api.saveDiagram(session.id, agentProposal.after, agentProposal.revision ?? revision, 'manual');
+      diagramPersistence.seed(session.id, result.revision);
+      set((state) => ({
+        agentProposal: null,
+        revision: result.revision,
+        session: state.session ? { ...state.session, revision: result.revision } : state.session,
+        saveStatus: { state: 'saved', historyAvailable: result.historyAvailable },
+        draftStatus: 'clear',
+        recoveryDraft: null,
+      }));
+      void clearRecoveryDraft(session.id, result.revision).catch(() => undefined);
+    } catch (error) {
+      set({ saveStatus: { state: 'error', message: error instanceof Error ? error.message : String(error) } });
+    }
+  },
+
+  rejectAgentProposal: () => {
+    const { agentProposal, busy } = get();
+    if (!agentProposal || busy) return;
+    set({ agentProposal: null });
+    get().setSource(agentProposal.before, { persist: false });
+  },
+
   promoteDraft: () => {
     const { session, recoveryDraft, revision } = get();
     if (!session || !recoveryDraft || session.archived || session.trashed || session.agentLease) return;
@@ -214,6 +324,7 @@ export const useStore = create<Store>((set, get) => ({
     set((state) => ({
       source: recoveryDraft.source,
       diagram: parseDiagram(recoveryDraft.source),
+      diagramModel: buildSemanticDiagram(recoveryDraft.source, state.renderError),
       past: [...state.past, state.source].slice(-HISTORY_LIMIT),
       future: [],
       draftStatus: 'clear',
@@ -231,6 +342,7 @@ export const useStore = create<Store>((set, get) => ({
       set((state) => ({
         source: saveStatus.currentSource,
         diagram: parseDiagram(saveStatus.currentSource),
+        diagramModel: buildSemanticDiagram(saveStatus.currentSource, state.renderError),
         revision: nextRevision,
         past: [],
         future: [],
@@ -273,12 +385,15 @@ export const useStore = create<Store>((set, get) => ({
       workspace,
       source,
       diagram: parseDiagram(source),
+      diagramModel: buildSemanticDiagram(source),
       revision: session.revision ?? 0,
       draftStatus: 'clear',
       recoveryDraft: null,
       past: [],
       future: [],
       selection: { kind: 'none' },
+      lastTransaction: null,
+      agentProposal: null,
       chat: [],
       conversations: [],
       conversationId: null,
@@ -326,6 +441,15 @@ export const useStore = create<Store>((set, get) => ({
     await flushDiagramBeforeNavigation(get().session);
     const { session } = await api.createSession();
     await get().loadSession(session.id);
+  },
+
+  duplicateSession: async () => {
+    const { session, source, busy, agentProposal } = get();
+    if (!session || busy || agentProposal) return;
+    await flushDiagramBeforeNavigation(session);
+    const { session: duplicate } = await api.createSession(`Copy of ${session.title}`, source);
+    await get().loadSession(duplicate.id);
+    await get().refreshSessions();
   },
 
   renameSession: async (title) => {

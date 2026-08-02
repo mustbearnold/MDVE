@@ -6,7 +6,10 @@ MDVE is a local Linux workbench for Mermaid diagrams. Edit the source, inspect
 the rendered graph, make safe structured flowchart changes, and ask Codex to
 transform the same durable diagram.
 
-V1 is Codex-only and runs against the documented Codex app-server interface.
+The current development label is the v3 semantic workbench (2026-08-03). It
+builds on the v1 durability contract and the v2 single-diagram workbench while
+remaining an iterative development build, not an official release.
+MDVE is Codex-only and runs against the documented Codex app-server interface.
 MDVE does not read Codex credential files, model caches, or private config; the
 installed `codex` runtime owns authentication and model entitlements.
 
@@ -57,6 +60,8 @@ code as the CLI/browser path.
 
 On a desktop layout, drag the Preview canvas to pan, drag a rendered node or
 edge label to reposition it, and click a rendered node to edit its label inline.
+Shift-click nodes to build a multi-selection, drag the selection as a group, and
+use Inspector to align or distribute it as one named edit transaction.
 Node and edge-label positions are saved as Mermaid-safe `%% mdve:` comments, so
 they survive reloads, undo/history, export, and agent turns; Reset saved node
 positions removes that presentation metadata. Right-click blank preview space
@@ -70,14 +75,17 @@ support keyboard arrow resizing when focused.
 - Source is CodeMirror over the canonical Mermaid text.
 - Preview renders the same text; nodes and links can be selected, edited, linked,
   zoomed, panned, and repositioned with durable layout state.
-- Inspector provides byte-preserving structured edits for `flowchart` and `graph` diagrams.
+- Inspector provides byte-preserving structured edits for `flowchart` and `graph` diagrams, including multi-node alignment and distribution.
+- A source-backed semantic diagram model gives Preview, Outline, Inspector, and Agent one graph identity and transaction boundary without replacing Mermaid as the durable source.
+- Agent results arrive as reviewable proposals with a modeled before/after summary; keep or reject the result before starting another turn.
 - Agent runs Codex in the Diagram workspace and streams progress into a durable Conversation.
 - History lists immutable, checksummed recovery points, compares a point with
   the current revision, and restores a point as a new revision.
 
 Other Mermaid grammars remain renderable and source-editable, but structured
 visual mutation is intentionally unavailable when MDVE cannot prove that it is
-safe. Mermaid remains the source of truth; there is no second canvas model.
+safe. Mermaid remains the durable source of truth; the semantic model is a
+source-backed projection, not a competing canvas document.
 
 ## Durability and continuity
 
@@ -119,10 +127,10 @@ The development-only `PORT` and `HOST` aliases are also accepted by the server.
 ## Development status
 
 The package baseline remains version `1.0.0`; work continues iteratively on
-`master` toward the v2 workbench. This repository state is not an official npm
-or GitHub publication. The release-gate harness remains available for a future
-public distribution, but publication-only owner, legal, registry, and
-trusted-publishing gates do not block normal development.
+`master` under the v3 development label dated 2026-08-03. This repository state
+is not an official npm or GitHub publication. The release-gate harness remains
+available for a future public distribution, but publication-only owner, legal,
+registry, and trusted-publishing gates do not block normal development.
 
 ## Scope
 

@@ -34,12 +34,14 @@ export function setDataRoot(root: string): void {
 
 const AGENTS_MD = `# MDVE Diagram workspace
 
-This directory belongs to MDVE, a Mermaid diagram editor. The user is looking
-at a live rendering of \`${DIAGRAM_FILE}\` while you work.
+This directory belongs to MDVE, a Mermaid diagram editor. The user is reviewing
+a candidate rendering of \`${DIAGRAM_FILE}\` while you work.
 
 Rules:
 
-- \`${DIAGRAM_FILE}\` is the diagram. To change what the user sees, edit that file.
+- \`${DIAGRAM_FILE}\` is the diagram candidate for this turn. To propose a change,
+  edit that file; MDVE will show the result for review before it becomes a durable
+  revision.
 - Always read \`${DIAGRAM_FILE}\` before editing it; the user may have changed it
   since your last turn.
 - Keep the file valid Mermaid. If you are unsure a construct renders, prefer the
@@ -52,7 +54,7 @@ Rules:
 - \`${DIAGRAM_FILE}\` must contain a diagram and nothing else. Never park research
   notes, prose or citations in it.
 - Reply with a one or two sentence summary of what you changed. Do not paste the
-  whole diagram back; the user can already see it.
+  whole diagram back; the user can already see the proposal.
 `;
 
 const SAFE_IDENTIFIER = /^[A-Za-z0-9_-]{1,128}$/;

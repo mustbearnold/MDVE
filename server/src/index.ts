@@ -3,7 +3,9 @@
  */
 
 import { existsSync } from 'node:fs';
+import { copyFile, mkdtemp, readFile as readFileAsync, rm } from 'node:fs/promises';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -49,6 +51,7 @@ import {
   updateMeta,
   updateConversation,
   writeDiagram,
+  DIAGRAM_FILE,
   isSafeIdentifier,
 } from './sessions.js';
 
@@ -478,24 +481,37 @@ app.post('/api/sessions/:id/chat', async (req, res) => {
 
   try {
     await ensureAgentsFile(id);
-    await provider.run(
-      {
-        prompt,
-        workspace: sessionDir(id),
-        threadId: newThread ? undefined : conversation.providerThreadId,
-        model: model || undefined,
-        effort: effort || undefined,
-        signal: controller.signal,
-      },
-      emit,
-    );
-    // The agent edits the file directly; hand back the final text so the client
-    // does not have to race the watcher.
-    const source = await readDiagram(id);
-    if (source !== null) send(res, 'diagram', { source });
-    await finishAgentTurn(id, controller.signal.aborted ? 'interrupted' : 'completed', { finalResponse });
+    const agentWorkspace = await mkdtemp(join(tmpdir(), 'mdve-agent-'));
+    let proposedSource: string | null = null;
+    try {
+      await copyFile(diagramPath(id), join(agentWorkspace, DIAGRAM_FILE));
+      await copyFile(join(sessionDir(id), 'AGENTS.md'), join(agentWorkspace, 'AGENTS.md'));
+      await provider.run(
+        {
+          prompt,
+          workspace: agentWorkspace,
+          threadId: newThread ? undefined : conversation.providerThreadId,
+          model: model || undefined,
+          effort: effort || undefined,
+          signal: controller.signal,
+        },
+        emit,
+      );
+      proposedSource = await readFileAsync(join(agentWorkspace, DIAGRAM_FILE), 'utf8');
+    } finally {
+      await rm(agentWorkspace, { recursive: true, force: true });
+    }
+
+    const outcome = controller.signal.aborted ? 'interrupted' : 'completed';
+    await finishAgentTurn(id, outcome, { finalResponse });
     const finalState = await getDiagramState(id);
-    if (finalState) send(res, 'diagram', finalState);
+    if (outcome === 'completed' && proposedSource !== null && finalState) {
+      // The candidate was produced in an isolated workspace. It is not durable
+      // until the user chooses Keep changes in the workbench.
+      send(res, 'diagram', { source: proposedSource, revision: finalState.revision, proposal: true });
+    } else if (finalState) {
+      send(res, 'diagram', finalState);
+    }
   } catch (err) {
     send(res, 'agent', { type: 'error', message: err instanceof Error ? err.message : String(err) });
     await finishAgentTurn(id, controller.signal.aborted ? 'interrupted' : 'failed', {

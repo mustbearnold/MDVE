@@ -8,6 +8,7 @@ let turnSeq = 0;
 export function ChatPanel(): JSX.Element {
   const chat = useStore((s) => s.chat);
   const busy = useStore((s) => s.busy);
+  const agentProposal = useStore((s) => s.agentProposal);
   const session = useStore((s) => s.session);
   const conversations = useStore((s) => s.conversations);
   const conversationId = useStore((s) => s.conversationId);
@@ -23,6 +24,10 @@ export function ChatPanel(): JSX.Element {
   const archiveConversation = useStore((s) => s.archiveConversation);
   const restoreConversation = useStore((s) => s.restoreConversation);
   const loadConversations = useStore((s) => s.loadConversations);
+  const beginAgentProposal = useStore((s) => s.beginAgentProposal);
+  const stageAgentSource = useStore((s) => s.stageAgentSource);
+  const acceptAgentProposal = useStore((s) => s.acceptAgentProposal);
+  const rejectAgentProposal = useStore((s) => s.rejectAgentProposal);
 
   const [input, setInput] = useState('');
   const [showTrace, setShowTrace] = useState(false);
@@ -52,7 +57,7 @@ export function ChatPanel(): JSX.Element {
   const submit = async () => {
     const prompt = input.trim();
     const state = useStore.getState();
-    if (!prompt || state.busy || !session || session.archived || state.conversations.find((item) => item.id === state.conversationId)?.archived) return;
+    if (!prompt || state.busy || state.agentProposal || !session || session.archived || state.conversations.find((item) => item.id === state.conversationId)?.archived) return;
 
     if (!state.conversationId) {
       await newConversation();
@@ -64,6 +69,7 @@ export function ChatPanel(): JSX.Element {
     state.appendChat({ id: `u${++turnSeq}`, role: 'user', text: prompt });
     const turnId = `a${++turnSeq}`;
     state.appendChat({ id: turnId, role: 'agent', text: '', trace: [], pending: true });
+    beginAgentProposal();
     state.setBusy(true);
 
     try {
@@ -73,8 +79,7 @@ export function ChatPanel(): JSX.Element {
         {
           onAgent: (event) => useStore.getState().applyAgentEvent(turnId, event),
           onDiagram: (source, state) => {
-            useStore.getState().setSource(source, { persist: false });
-            if (state?.revision !== undefined) useStore.getState().setRevision(state.revision);
+            stageAgentSource(source, state);
           },
         },
       );
@@ -86,9 +91,18 @@ export function ChatPanel(): JSX.Element {
     } finally {
       useStore.getState().patchChat(turnId, { pending: false });
       useStore.getState().setBusy(false);
+      const proposal = useStore.getState().agentProposal;
+      if (proposal && proposal.before === proposal.after) useStore.getState().acceptAgentProposal();
       void loadConversations();
     }
   };
+
+  const proposalDelta = agentProposal?.delta;
+  const proposalChanges = proposalDelta
+    ? proposalDelta.addedNodes.length + proposalDelta.removedNodes.length + proposalDelta.changedNodes.length
+      + proposalDelta.addedEdges.length + proposalDelta.removedEdges.length + proposalDelta.changedEdges.length
+      + proposalDelta.movedNodes.length
+    : 0;
 
   return (
     <section className="chat" aria-labelledby="agent-heading">
@@ -232,7 +246,7 @@ export function ChatPanel(): JSX.Element {
             }
           }}
           rows={3}
-          disabled={busy || Boolean(session?.archived) || Boolean(conversation?.archived)}
+          disabled={busy || Boolean(agentProposal) || Boolean(session?.archived) || Boolean(conversation?.archived)}
         />
         <div className="chat-actions">
           <label className="trace-toggle">
@@ -244,11 +258,26 @@ export function ChatPanel(): JSX.Element {
               Stop
             </button>
           ) : (
-            <button className="button-primary" onClick={() => void submit()} disabled={!input.trim()}>
+            <button className="button-primary" onClick={() => void submit()} disabled={!input.trim() || Boolean(agentProposal)}>
               Send
             </button>
           )}
         </div>
+        {agentProposal && proposalChanges > 0 && (
+          <section className="agent-proposal" aria-label="Agent proposal" role="status">
+            <div className="agent-proposal-heading">
+              <span className="agent-proposal-kicker">Agent proposal</span>
+              <strong>{proposalChanges} modeled change{proposalChanges === 1 ? '' : 's'}</strong>
+            </div>
+            <p>
+              {proposalDelta?.addedNodes.length ?? 0} added · {proposalDelta?.removedNodes.length ?? 0} removed · {proposalDelta?.changedNodes.length ?? 0} relabeled · {proposalDelta?.movedNodes.length ?? 0} moved
+            </p>
+            <div className="agent-proposal-actions">
+              <button type="button" className="button-primary" onClick={acceptAgentProposal} disabled={busy}>Keep changes</button>
+              <button type="button" className="danger" onClick={rejectAgentProposal} disabled={busy}>Reject proposal</button>
+            </div>
+          </section>
+        )}
       </footer>
     </section>
   );

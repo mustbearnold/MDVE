@@ -178,7 +178,9 @@ export function App(): JSX.Element {
   useEffect(() => {
     if (!session) return;
     return subscribeDiagram(session.id, (source) => {
-      useStore.getState().setSource(source, { persist: false });
+      const state = useStore.getState();
+      if (state.busy || state.agentProposal) state.stageAgentSource(source);
+      else state.setSource(source, { persist: false });
     });
   }, [session?.id]);
 

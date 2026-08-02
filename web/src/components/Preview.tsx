@@ -1,17 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import {
-  addEdge,
-  addNode,
-  clearLayoutPositions,
-  deleteEdge,
-  deleteNode,
   edgePositionKey,
   readEdgeLabelPositions,
   readNodePositions,
-  setEdgeLabelPosition,
-  setNodeLabel,
-  setNodePosition,
 } from '../mermaid/mutate';
 import { parseDiagram, reservedIdsIn, supportsStructuredEditing, type Diagram } from '../mermaid/parse';
 import { useStore, type Selection } from '../state/store';
@@ -130,8 +122,15 @@ type ContextMenuState = { left: number; top: number; selection: ContextMenuTarge
 type Point = { x: number; y: number };
 type DragState =
   | { kind: 'canvas'; x: number; y: number; ox: number; oy: number; moved: boolean }
-  | { kind: 'node'; id: string; x: number; y: number; ox: number; oy: number; moved: boolean }
+  | { kind: 'nodes'; ids: string[]; x: number; y: number; offsets: Record<string, Point>; moved: boolean }
   | { kind: 'edge-label'; key: string; x: number; y: number; ox: number; oy: number; moved: boolean };
+
+function selectionAfterNodeClick(current: Selection, id: string, additive: boolean): Selection {
+  if (!additive) return { kind: 'node', id };
+  const ids = current.kind === 'nodes' ? current.ids : current.kind === 'node' ? [current.id] : [];
+  const next = ids.includes(id) ? ids.filter((candidate) => candidate !== id) : [...ids, id];
+  return next.length > 0 ? { kind: 'nodes', ids: next } : { kind: 'none' };
+}
 
 function decodePoints(encoded: string | null): Point[] | null {
   if (!encoded) return null;
@@ -162,8 +161,9 @@ export function Preview(): JSX.Element {
   const source = useStore((s) => s.source);
   const selection = useStore((s) => s.selection);
   const diagram = useStore((s) => s.diagram);
+  const diagramModel = useStore((s) => s.diagramModel);
   const select = useStore((s) => s.select);
-  const setSource = useStore((s) => s.setSource);
+  const applyTransaction = useStore((s) => s.applyTransaction);
   const session = useStore((s) => s.session);
   const renderError = useStore((s) => s.renderError);
   const setRenderError = useStore((s) => s.setRenderError);
@@ -179,6 +179,7 @@ export function Preview(): JSX.Element {
   const dragRef = useRef<DragState | null>(null);
   const dragCleanupRef = useRef<(() => void) | null>(null);
   const draggedRef = useRef(false);
+  const suppressNextClickRef = useRef(false);
   const nodeOffsetsRef = useRef(new Map<string, Point>());
   const edgeLabelOffsetsRef = useRef(new Map<string, Point>());
   const renderedSourceRef = useRef<string | null>(null);
@@ -307,8 +308,11 @@ export function Preview(): JSX.Element {
     if (!editingNodeId) return;
     const id = editingNodeId;
     setEditingNodeId(null);
-    if (commit) setSource(setNodeLabel(source, id, inlineDraft));
-  }, [editingNodeId, inlineDraft, setSource, source]);
+    if (commit) applyTransaction({
+      title: 'Edit node label',
+      operations: [{ kind: 'node.set-label', nodeId: id, label: inlineDraft }],
+    });
+  }, [applyTransaction, editingNodeId, inlineDraft]);
 
   useEffect(() => {
     let cancelled = false;
@@ -363,15 +367,6 @@ export function Preview(): JSX.Element {
           nodeElement.setAttribute('role', 'button');
           nodeElement.setAttribute('tabindex', '0');
           nodeElement.setAttribute('aria-label', `Node: ${accessibleLabel}`);
-          nodeElement.addEventListener('dblclick', (event) => {
-            event.preventDefault();
-            beginInlineEdit(nodeId);
-          });
-          nodeElement.addEventListener('click', () => {
-            if (draggedRef.current) return;
-            select({ kind: 'node', id: nodeId });
-            beginInlineEdit(nodeId);
-          });
         });
         hostRef.current.querySelectorAll('g.edgeLabel').forEach((labelElement) => {
           const ends = edgeEndsOfLabel(labelElement, knownNodeIds);
@@ -422,8 +417,10 @@ export function Preview(): JSX.Element {
             pendingNodePlacementRef.current = null;
             applyNodeOffset(pendingPlacement.id, offset);
             applyEdgeOffsets();
-            const positionedSource = setNodePosition(source, pendingPlacement.id, offset);
-            if (positionedSource !== source) setSource(positionedSource);
+            applyTransaction({
+              title: 'Place new node',
+              operations: [{ kind: 'layout.move', nodeId: pendingPlacement.id, position: offset }],
+            });
           }
         }
         if (!manualViewRef.current) fitToView();
@@ -439,7 +436,7 @@ export function Preview(): JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [applyEdgeOffsets, applyNodeOffset, applyTransientOffsets, beginInlineEdit, diagram, fitToView, knownNodeIds, select, setRenderError, setSource, source]);
+  }, [applyEdgeOffsets, applyNodeOffset, applyTransaction, applyTransientOffsets, beginInlineEdit, diagram, fitToView, knownNodeIds, select, setRenderError, source]);
 
   // Refit when the pane itself changes size.
   useEffect(() => {
@@ -472,6 +469,11 @@ export function Preview(): JSX.Element {
           if (ends && ends.from === edge.from && ends.to === edge.to) el.classList.add('mdve-selected');
         });
       }
+    } else if (selection.kind === 'nodes') {
+      const ids = new Set(selection.ids);
+      host.querySelectorAll('g.node').forEach((el) => {
+        if (nodeIdOf(el) && ids.has(nodeIdOf(el)!)) el.classList.add('mdve-selected');
+      });
     }
   }, [selection, source, diagram, knownNodeIds]);
 
@@ -512,20 +514,24 @@ export function Preview(): JSX.Element {
       setConnectionSourceId(null);
       return true;
     }
-    const nextSource = addEdge(source, connectionSourceId, targetId);
+    const applied = applyTransaction({
+      title: 'Connect nodes',
+      operations: [{ kind: 'edge.add', from: connectionSourceId, to: targetId }],
+    });
     setConnectionSourceId(null);
-    if (nextSource === source) return true;
-    const nextEdges = parseDiagram(nextSource).edges;
-    const nextEdge = nextEdges[nextEdges.length - 1];
-    setSource(nextSource);
-    select(nextEdge ? { kind: 'edge', key: nextEdge.key } : { kind: 'none' });
+    const nextEdge = applied?.model.edges[applied.model.edges.length - 1];
+    select(nextEdge ? { kind: 'edge', key: nextEdge.sourceKey } : { kind: 'none' });
     return true;
-  }, [connectionSourceId, select, setSource, source]);
+  }, [applyTransaction, connectionSourceId, select]);
 
   const cancelConnection = useCallback(() => setConnectionSourceId(null), []);
 
   const onClick = useCallback(
     (event: React.MouseEvent) => {
+      if (suppressNextClickRef.current) {
+        suppressNextClickRef.current = false;
+        return;
+      }
       if (draggedRef.current) {
         draggedRef.current = false;
         return;
@@ -534,13 +540,14 @@ export function Preview(): JSX.Element {
       const nextSelection = selectionForTarget(target, diagram, knownNodeIds) ?? { kind: 'none' };
       if (nextSelection.kind === 'node' && finishConnection(nextSelection.id)) return;
       if (nextSelection.kind === 'node' && editable) {
-        select(nextSelection);
-        beginInlineEdit(nextSelection.id);
+        const next = selectionAfterNodeClick(selection, nextSelection.id, event.shiftKey);
+        select(next);
+        if (!event.shiftKey && next.kind === 'node') beginInlineEdit(nextSelection.id);
         return;
       }
       select(nextSelection);
     },
-    [beginInlineEdit, diagram, editable, finishConnection, knownNodeIds, select],
+    [beginInlineEdit, diagram, editable, finishConnection, knownNodeIds, select, selection],
   );
 
   const onDoubleClick = useCallback(
@@ -579,13 +586,14 @@ export function Preview(): JSX.Element {
 
   const addNodeFromContextMenu = useCallback(() => {
     if (!structuredEditingAvailable || !contextMenu) return;
-    const result = addNode(source);
-    if (!result.id || result.source === source) return;
-    pendingNodePlacementRef.current = { id: result.id, point: contextMenu.graphPoint };
-    setSource(result.source);
-    select({ kind: 'node', id: result.id });
+    const existing = new Set(diagram.nodes.map((node) => node.id));
+    const applied = applyTransaction({ title: 'Add node', operations: [{ kind: 'node.add' }] });
+    const added = applied?.model.nodes.find((node) => !existing.has(node.id));
+    if (!added) return;
+    pendingNodePlacementRef.current = { id: added.id, point: contextMenu.graphPoint };
+    select({ kind: 'node', id: added.id });
     setContextMenu(null);
-  }, [contextMenu, select, setSource, source, structuredEditingAvailable]);
+  }, [applyTransaction, contextMenu, diagram.nodes, select, structuredEditingAvailable]);
 
   const startConnectionFromContextMenu = useCallback(() => {
     const target = contextMenu?.selection;
@@ -602,8 +610,8 @@ export function Preview(): JSX.Element {
     nodeOffsetsRef.current.clear();
     edgeLabelOffsetsRef.current.clear();
     manualViewRef.current = false;
-    setSource(clearLayoutPositions(source));
-  }, [hasSavedLayout, setSource, source, structuredEditingAvailable]);
+    applyTransaction({ title: 'Reset diagram layout', operations: [{ kind: 'layout.reset' }] });
+  }, [applyTransaction, hasSavedLayout, structuredEditingAvailable]);
 
   const editNodeFromContextMenu = useCallback(() => {
     const target = contextMenu?.selection;
@@ -615,22 +623,24 @@ export function Preview(): JSX.Element {
   const deleteNodeFromContextMenu = useCallback(() => {
     const target = contextMenu?.selection;
     if (!structuredEditingAvailable || !target || target.kind !== 'node') return;
-    const nextSource = deleteNode(source, target.id);
-    if (nextSource === source) return;
-    setSource(nextSource);
+    const applied = applyTransaction({ title: 'Delete node', operations: [{ kind: 'node.delete', nodeId: target.id }] });
+    if (!applied?.changed) return;
     select({ kind: 'none' });
     setContextMenu(null);
-  }, [contextMenu?.selection, select, setSource, source, structuredEditingAvailable]);
+  }, [applyTransaction, contextMenu?.selection, select, structuredEditingAvailable]);
 
   const deleteEdgeFromContextMenu = useCallback(() => {
     const target = contextMenu?.selection;
     if (!structuredEditingAvailable || !target || target.kind !== 'edge') return;
-    const nextSource = deleteEdge(source, target.key);
-    if (nextSource === source) return;
-    setSource(nextSource);
+    const edge = diagram.edges.find((candidate) => candidate.key === target.key);
+    const semanticEdge = edge && diagramModel.edges.find((candidate) => candidate.sourceKey === edge.key);
+    const applied = semanticEdge
+      ? applyTransaction({ title: 'Delete link', operations: [{ kind: 'edge.delete', edgeId: semanticEdge.id }] })
+      : null;
+    if (!applied?.changed) return;
     select({ kind: 'none' });
     setContextMenu(null);
-  }, [contextMenu?.selection, select, setSource, source, structuredEditingAvailable]);
+  }, [applyTransaction, contextMenu?.selection, diagram.edges, diagramModel.edges, select, structuredEditingAvailable]);
 
   const onWheel = useCallback(
     (event: React.WheelEvent) => {
@@ -664,14 +674,18 @@ export function Preview(): JSX.Element {
     const drag = dragRef.current;
     if (!drag) return;
     if (Math.abs(clientX - drag.x) > 3 || Math.abs(clientY - drag.y) > 3) drag.moved = true;
-    if (drag.kind === 'node') {
+    if (drag.kind === 'nodes') {
       const scale = Math.max(0.05, view.scale);
-      const offset = {
-        x: drag.ox + (clientX - drag.x) / scale,
-        y: drag.oy + (clientY - drag.y) / scale,
+      const delta = {
+        x: (clientX - drag.x) / scale,
+        y: (clientY - drag.y) / scale,
       };
-      nodeOffsetsRef.current.set(drag.id, offset);
-      applyNodeOffset(drag.id, offset);
+      drag.ids.forEach((id) => {
+        const origin = drag.offsets[id] ?? { x: 0, y: 0 };
+        const offset = { x: origin.x + delta.x, y: origin.y + delta.y };
+        nodeOffsetsRef.current.set(id, offset);
+        applyNodeOffset(id, offset);
+      });
       applyEdgeOffsets();
       return;
     }
@@ -693,22 +707,38 @@ export function Preview(): JSX.Element {
     const drag = dragRef.current;
     if (drag?.moved) {
       draggedRef.current = true;
+      suppressNextClickRef.current = false;
       window.setTimeout(() => {
         draggedRef.current = false;
       }, 0);
     }
-    if (drag?.kind === 'node' && drag.moved && editable) {
-      const offset = nodeOffsetsRef.current.get(drag.id);
-      if (offset) setSource(setNodePosition(source, drag.id, offset));
+    if (drag?.kind === 'nodes' && drag.moved && editable) {
+      const positions: Record<string, Point> = {};
+      drag.ids.forEach((id) => {
+        const offset = nodeOffsetsRef.current.get(id);
+        if (offset) positions[id] = offset;
+      });
+      if (Object.keys(positions).length > 0) {
+        applyTransaction({
+          title: drag.ids.length > 1 ? `Move ${drag.ids.length} nodes` : 'Move node',
+          operations: [{ kind: 'layout.move-many', positions }],
+        });
+      }
     }
     if (drag?.kind === 'edge-label' && drag.moved && editable) {
       const offset = edgeLabelOffsetsRef.current.get(drag.key);
-      if (offset) setSource(setEdgeLabelPosition(source, drag.key, offset));
+      const edge = diagramModel.edges.find((candidate) => candidate.sourceKey === drag.key);
+      if (offset && edge) {
+        applyTransaction({
+          title: 'Move link label',
+          operations: [{ kind: 'layout.edge-label', edgeId: edge.id, position: offset }],
+        });
+      }
     }
     dragRef.current = null;
     dragCleanupRef.current?.();
     dragCleanupRef.current = null;
-  }, [editable, setSource, source]);
+  }, [applyTransaction, diagramModel.edges, editable]);
 
   const onPointerDown = useCallback((event: React.PointerEvent) => {
     if (event.button !== 0) return;
@@ -718,15 +748,33 @@ export function Preview(): JSX.Element {
     const isNodeDrag = nextSelection?.kind === 'node' && editable;
     const isEdgeLabelDrag = nextSelection?.kind === 'edge' && editable && Boolean(target.closest('g.edgeLabel[data-mdve-edge-key]'));
     if (isNodeDrag) {
-      const offset = nodeOffsetsRef.current.get(nextSelection.id) ?? { x: 0, y: 0 };
-      select(nextSelection);
+      const currentIds = selection.kind === 'nodes'
+        ? selection.ids
+        : selection.kind === 'node' && selection.id === nextSelection.id ? [selection.id] : [];
+      let ids = currentIds.includes(nextSelection.id) ? currentIds : [nextSelection.id];
+      if (event.shiftKey) {
+        const toggled = selectionAfterNodeClick(selection, nextSelection.id, true);
+        select(toggled);
+        suppressNextClickRef.current = true;
+        if (toggled.kind !== 'nodes') {
+          dragRef.current = { kind: 'canvas', x: event.clientX, y: event.clientY, ox: view.x, oy: view.y, moved: false };
+          event.preventDefault();
+          return;
+        }
+        ids = toggled.ids;
+      } else {
+        select(ids.length > 1 ? { kind: 'nodes', ids } : nextSelection);
+      }
+      const offsets: Record<string, Point> = {};
+      ids.forEach((id) => {
+        offsets[id] = nodeOffsetsRef.current.get(id) ?? { x: 0, y: 0 };
+      });
       dragRef.current = {
-        kind: 'node',
-        id: nextSelection.id,
+        kind: 'nodes',
+        ids,
         x: event.clientX,
         y: event.clientY,
-        ox: offset.x,
-        oy: offset.y,
+        offsets,
         moved: false,
       };
     } else if (isEdgeLabelDrag) {
@@ -755,7 +803,7 @@ export function Preview(): JSX.Element {
       window.removeEventListener('pointerup', onWindowEnd);
       window.removeEventListener('pointercancel', onWindowEnd);
     };
-  }, [diagram, editable, endDrag, knownNodeIds, moveDrag, select, view.x, view.y]);
+  }, [diagram, editable, endDrag, knownNodeIds, moveDrag, select, selection, view.x, view.y]);
 
   return (
     <div className="preview" ref={previewRef}>
@@ -861,7 +909,7 @@ export function Preview(): JSX.Element {
               <button
                 type="button"
                 role="menuitem"
-                disabled={!structuredEditingAvailable || deleteNode(source, contextMenu.selection.id) === source}
+                disabled={!structuredEditingAvailable}
                 onClick={deleteNodeFromContextMenu}
               >
                 Delete node
@@ -872,7 +920,7 @@ export function Preview(): JSX.Element {
             <button
               type="button"
               role="menuitem"
-              disabled={!structuredEditingAvailable || deleteEdge(source, contextMenu.selection.key) === source}
+              disabled={!structuredEditingAvailable}
               onClick={deleteEdgeFromContextMenu}
             >
               Delete link
