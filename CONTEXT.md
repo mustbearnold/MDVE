@@ -23,6 +23,7 @@ Canonical product vocabulary for MDVE. Decision rationale lives in the linked Wa
 - **Source-only Diagram** — A Diagram that renders and remains editable through source or Codex but does not qualify for structured visual mutation. In v1, every Mermaid grammar except `flowchart` and `graph` is source-only.
 - **Agent transformation** — A Codex turn that reads and edits `diagram.mmd` inside its Diagram workspace and reports progress to the workspace.
 - **Local web application** — MDVE's v1 delivery form: an `mdve` CLI starts one loopback-only process that serves the version-matched UI and API from a stable local origin and opens the system browser. It is local software, not a hosted service.
+- **Desktop shell** — An Electron window around the same version-matched loopback server and production UI. It owns the native window and server lifecycle but does not create a second diagram model, API, or persistence path.
 - **Release artifact** — The versioned npm package that installs the `mdve` executable and contains its version-matched launcher, server, and production UI.
 - **V1 release gate** — A non-waivable pass/fail criterion applied to one identified release candidate. MDVE may claim v1 only when every gate passes against the same Git commit and npm tarball recorded by integrity digest.
 - **Pre-commercial release** — A public, free-of-charge MDVE release with no billing or license-entitlement mechanism.

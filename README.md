@@ -49,6 +49,12 @@ npm run build
 npm start
 ```
 
+The same build can run in an installable Electron desktop shell. During
+development, use `npm run desktop:dev`; to create the local Linux artifact,
+run `npm run desktop:build`. The AppImage is written to `release/desktop/` and uses the
+same authenticated loopback server, `~/.mdve` data directory, and Mermaid/UI
+code as the CLI/browser path.
+
 On a desktop layout, drag the Preview canvas to pan, click a rendered node to
 edit its label inline, use the close/open controls to hide or restore the
 Source and right panels, and drag either vertical divider to resize the

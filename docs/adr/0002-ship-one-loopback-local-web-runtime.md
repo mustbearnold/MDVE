@@ -1,3 +1,8 @@
 # Ship one loopback local-web runtime
 
-MDVE v1 ships as one loopback-only process launched by `mdve`, serving a version-matched UI and authenticated API from a stable browser origin. Supporting a desktop wrapper or two shells would multiply packaging, update, lifecycle, and security behavior without improving the chosen Linux developer workflow; the evidence and rejected options are in [the delivery-form decision](../../.scratch/mdve-v1/issues/03-choose-v1-delivery-form.md).
+MDVE's canonical v1 runtime is one loopback-only process launched by `mdve`,
+serving a version-matched UI and authenticated API from a stable origin. The
+Electron desktop shell added by [ADR 0009](0009-package-an-electron-desktop-shell.md)
+reuses that process and UI; it does not introduce a second server, persistence
+path, or diagram model. The original browser-first delivery rationale remains
+useful for the CLI and automation surface.

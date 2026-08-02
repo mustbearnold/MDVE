@@ -19,7 +19,9 @@ Should v1 ship as an installable Linux desktop application, a polished local web
 ### Decision
 
 MDVE v1 ships as a **polished local web application launched by an `mdve`
-CLI**, with no separately supported desktop wrapper.
+CLI**, plus an Electron desktop shell over the same runtime for users who want
+a native window. The shell is a second delivery surface, not a second backend
+or diagram model.
 
 The supported runtime shape is one local process that binds only to loopback,
 serves a version-matched production UI and API from one stable origin, opens the
@@ -49,28 +51,36 @@ The CLI UX contract is:
 - stopping the launcher shuts down the local service without deleting sessions
   or recovery state.
 
+The desktop UX contract is:
+
+- the Electron main process starts the same authenticated loopback server and
+  opens the same production workbench in a native window;
+- the shell uses the same `~/.mdve` data directory and server/API contract as
+  the CLI/browser path;
+- the packaged AppImage passes a launch smoke test that reaches the workbench
+  and exercises a preview context-menu action.
+
 ### Options considered
 
 | Option | Correctness and durability | Architecture and maintenance | Target-user UX | Operability and QA | Decision |
 | --- | --- | --- | --- | --- | --- |
-| Installable Linux desktop application | Medium | Medium-low | High | Medium-low | Defer |
+| Installable Linux desktop application | High | Medium | High | Medium | Add as Electron shell |
 | Local web application launched by CLI | High | High | High | High | Choose |
-| Desktop and browser modes from one release | Medium-high | Low | Medium-high | Low | Reject for v1 |
+| Desktop and browser modes from one release | High | Medium | High | Medium | Choose, sharing one runtime |
 
-The desktop option can hide the terminal and add native menus, file dialogs,
-task-switcher presence, and tighter window lifecycle. It does not remove MDVE's
-host-side responsibilities: a process must still access `~/.mdve`, inspect the
-Codex installation and model cache, spawn the subscription-authenticated Codex
-CLI, watch files, and expose recovery state. Electron or a system-WebView shell
-would therefore wrap the existing local server/UI topology while adding Linux
-packaging, WebView/runtime variation, GUI-environment `PATH` handling, update
-behavior, permissions, and another crash/restore matrix.
+The desktop option can hide the terminal and add native window presence and a
+tighter window lifecycle. It does not remove MDVE's host-side responsibilities:
+a process must still access `~/.mdve`, inspect the Codex installation and model
+cache, spawn the subscription-authenticated Codex CLI, watch files, and expose
+recovery state. Electron wraps the existing local server/UI topology while
+adding Linux packaging, GUI-environment `PATH` handling, update behavior,
+permissions, and another crash/restore matrix. The shared runtime and a
+packaged-shell smoke test keep that matrix bounded.
 
-Supporting both forms would preserve future flexibility but turn every
-durability, accessibility, agent-lifecycle, and release check into a two-shell
-matrix before either form has proved repeated use. Keeping the UI server-based
-and shell-agnostic preserves the option to add a desktop wrapper later without
-making it a v1 promise.
+Supporting both forms still creates a two-shell matrix for durability,
+accessibility, agent lifecycle, and release checks. Keeping one UI/server
+implementation and adding a packaged-shell smoke test bounds that matrix while
+preserving the browser and CLI workflows.
 
 ### Evidence and trade-offs
 
@@ -83,20 +93,20 @@ making it a v1 promise.
 - The durability contract depends on both browser-journaled recovery drafts and
   server-side durable revisions. A stable local browser origin fits that split;
   arbitrary port selection would violate it.
-- The existing application has no desktop runtime, packaging configuration,
-  native bridge, updater, or desktop-specific tests. Adding those surfaces does
-  not improve the winning job of moving among Codex, visual structure, and
-  Mermaid source.
+- The existing application now has a desktop runtime, packaging configuration,
+  and a desktop-specific launch test. The shell improves the winning job by
+  keeping the workbench in a task-switchable native window while reusing the
+  same source, history, and agent behavior.
 
-The chosen form retains browser chrome and a launcher process, and it defers
-native file associations, desktop menus, and an app-store-style install. Those
-costs are acceptable for the chosen technical user. A desktop shell should be
-reconsidered only after usage evidence identifies a native-only capability or
-onboarding failure large enough to justify its permanent release matrix.
+The chosen forms retain a browser path and a launcher process while deferring
+native file associations, desktop menus, and an app-store-style updater. Those
+costs are acceptable for the chosen technical user. A future native backend or
+updater should be reconsidered only after usage evidence identifies a capability
+that the shared Electron shell cannot provide.
 
-Confidence: **high (0.93)**. The current architecture, target user, and
-durability contract all favor the local-web form. The remaining uncertainty is
-how to package and distribute the launcher, now isolated in **Choose the v1
-installation, update, and adoption path**.
+Confidence: **high (0.89)**. The current architecture and durability contract
+favor one canonical loopback runtime; the new desktop shell adds a useful
+native window without forking that runtime. The AppImage remains an iterative
+local artifact rather than an official publication.
 
 ## Comments

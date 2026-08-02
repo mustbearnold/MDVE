@@ -26,7 +26,7 @@ function archiveEntryBytes(path, entry) {
 
 const paths = candidate ? packagePathsFromArchive(candidate) : packagePathsFromDryRun();
 const forbidden = /(^|\/)(\.scratch|\.agents|\.github|node_modules|server\/src|web\/src)(\/|$)|\.map$/;
-const required = ['package.json', 'README.md', 'LICENSE.md', 'NOTICE.md', 'bin/mdve.mjs', 'dist/web/index.html', 'dist/server/index.js'];
+const required = ['package.json', 'README.md', 'LICENSE.md', 'NOTICE.md', 'bin/mdve.mjs', 'desktop/main.mjs', 'dist/web/index.html', 'dist/server/index.js'];
 const unexpected = paths.filter((path) => forbidden.test(path));
 const missing = required.filter((path) => !paths.includes(path));
 

@@ -2,11 +2,14 @@
   "name": "mdve",
   "version": "1.0.0",
   "private": false,
+  "desktopName": "mdve",
+  "main": "desktop/main.mjs",
   "bin": {
     "mdve": "bin/mdve.mjs"
   },
   "files": [
     "bin/",
+    "desktop/",
     "dist/",
     "README.md",
     "LICENSE.md",
@@ -30,6 +33,10 @@
     "dev": "concurrently -n server,web -c blue,green \"npm:dev:server\" \"npm:dev:web\"",
     "dev:server": "PORT=${MDVE_PORT:-8787} tsx watch server/src/index.ts",
     "dev:web": "vite",
+    "desktop:dev": "npm run build && electron .",
+    "desktop:build": "npm run build && electron-builder --linux AppImage --publish never",
+    "test:desktop": "npm run build && node --test test/desktop/launch.test.mjs",
+    "test:desktop:package": "node scripts/test-desktop-package.mjs",
     "build:web": "vite build",
     "build:server": "node scripts/build-server.mjs",
     "build": "npm run build:web && npm run build:server",
@@ -56,6 +63,27 @@
     "cors": "^2.8.5",
     "express": "^4.21.2"
   },
+  "build": {
+    "appId": "com.mustbearn.mdve",
+    "productName": "MDVE",
+    "artifactName": "MDVE-${version}-${arch}.${ext}",
+    "directories": {
+      "output": "release/desktop"
+    },
+    "files": [
+      "desktop/**",
+      "dist/**",
+      "package.json",
+      "README.md",
+      "LICENSE.md",
+      "NOTICE.md"
+    ],
+    "linux": {
+      "category": "Development",
+      "syncDesktopName": true,
+      "target": ["AppImage"]
+    }
+  },
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",
     "@codemirror/commands": "^6.8.1",
@@ -71,6 +99,8 @@
     "@vitejs/plugin-react": "^4.4.1",
     "codemirror": "^6.0.1",
     "concurrently": "^9.1.2",
+    "electron": "^43.2.0",
+    "electron-builder": "^26.15.3",
     "mermaid": "^11.6.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
