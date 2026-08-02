@@ -267,9 +267,14 @@ test('preview supports pointer dragging and direct node label editing', async ({
   await page.mouse.down();
   await page.mouse.move(nodeBoxBeforeDrag!.x + nodeBoxBeforeDrag!.width / 2 + 72, nodeBoxBeforeDrag!.y + nodeBoxBeforeDrag!.height / 2 + 28, { steps: 5 });
   await page.mouse.up();
-  await expect.poll(() => stage.getAttribute('style')).not.toBe(beforeTransform);
+  await expect.poll(() => stage.getAttribute('style')).toBe(beforeTransform);
+  const nodeBoxAfterDrag = await node.boundingBox();
+  expect(nodeBoxAfterDrag).toBeTruthy();
+  expect(nodeBoxAfterDrag!.x - nodeBoxBeforeDrag!.x).toBeGreaterThan(50);
+  expect(nodeBoxAfterDrag!.y - nodeBoxBeforeDrag!.y).toBeGreaterThan(10);
 
   await page.waitForTimeout(120);
+  await expect(page.getByRole('textbox', { name: 'Edit node label' })).toBeHidden();
   const editBox = await node.boundingBox();
   expect(editBox).toBeTruthy();
   await page.mouse.click(editBox!.x + editBox!.width / 2, editBox!.y + editBox!.height / 2);

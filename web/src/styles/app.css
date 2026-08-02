@@ -697,6 +697,7 @@ button.danger:hover:not(:disabled) {
 
 .preview-svg svg {
   display: block;
+  overflow: visible;
 }
 
 .preview-svg g.node,

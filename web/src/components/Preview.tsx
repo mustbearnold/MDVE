@@ -83,6 +83,35 @@ function selectionForTarget(
 
 type ContextMenuTarget = Exclude<Selection, { kind: 'none' }> | null;
 type ContextMenuState = { left: number; top: number; selection: ContextMenuTarget };
+type Point = { x: number; y: number };
+type DragState =
+  | { kind: 'canvas'; x: number; y: number; ox: number; oy: number; moved: boolean }
+  | { kind: 'node'; id: string; x: number; y: number; ox: number; oy: number; moved: boolean };
+
+function decodePoints(encoded: string | null): Point[] | null {
+  if (!encoded) return null;
+  try {
+    const points = JSON.parse(window.atob(encoded)) as unknown;
+    if (!Array.isArray(points)) return null;
+    return points.filter((point): point is Point => {
+      if (!point || typeof point !== 'object') return false;
+      const candidate = point as Record<string, unknown>;
+      return typeof candidate.x === 'number' && typeof candidate.y === 'number';
+    });
+  } catch {
+    return null;
+  }
+}
+
+function encodePoints(points: Point[]): string {
+  return window.btoa(JSON.stringify(points));
+}
+
+function pathForPoints(points: Point[]): string {
+  if (points.length === 0) return '';
+  const [first, ...rest] = points;
+  return `M${first.x},${first.y}${rest.map((point) => `L${point.x},${point.y}`).join('')}`;
+}
 
 export function Preview(): JSX.Element {
   const source = useStore((s) => s.source);
@@ -102,9 +131,11 @@ export function Preview(): JSX.Element {
   const contextMenuRef = useRef<HTMLDivElement>(null);
   /** Pan is an offset from centred; the centring itself is computed below. */
   const [view, setView] = useState({ x: 0, y: 0, scale: 1 });
-  const dragRef = useRef<{ x: number; y: number; ox: number; oy: number; moved: boolean } | null>(null);
+  const dragRef = useRef<DragState | null>(null);
   const dragCleanupRef = useRef<(() => void) | null>(null);
   const draggedRef = useRef(false);
+  const nodeOffsetsRef = useRef(new Map<string, Point>());
+  const renderedSourceRef = useRef<string | null>(null);
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [inlineDraft, setInlineDraft] = useState('');
   const [inlineEditorRect, setInlineEditorRect] = useState({ left: 0, top: 0, width: 0, height: 0 });
@@ -165,6 +196,46 @@ export function Preview(): JSX.Element {
     requestAnimationFrame(() => positionInlineEditor(id));
   }, [diagram.nodes, editable, positionInlineEditor]);
 
+  const applyNodeOffset = useCallback((id: string, offset: Point) => {
+    const host = hostRef.current;
+    if (!host) return;
+    const node = Array.from(host.querySelectorAll('g.node')).find((element) => nodeIdOf(element) === id);
+    if (!node) return;
+    const baseTransform = node.getAttribute('data-mdve-base-transform') ?? node.getAttribute('transform') ?? '';
+    node.setAttribute('data-mdve-base-transform', baseTransform);
+    node.setAttribute('transform', offset.x === 0 && offset.y === 0 ? baseTransform : `translate(${offset.x} ${offset.y}) ${baseTransform}`);
+  }, []);
+
+  const applyEdgeOffsets = useCallback(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    host.querySelectorAll('.edgePaths path').forEach((path) => {
+      const ends = edgeEndsOf(path, knownNodeIds);
+      if (!ends) return;
+      const baseD = path.getAttribute('data-mdve-base-d') ?? path.getAttribute('d');
+      const basePointsEncoded = path.getAttribute('data-mdve-base-points') ?? path.getAttribute('data-points');
+      if (!baseD || !basePointsEncoded) return;
+      path.setAttribute('data-mdve-base-d', baseD);
+      path.setAttribute('data-mdve-base-points', basePointsEncoded);
+      const points = decodePoints(basePointsEncoded);
+      if (!points || points.length === 0) return;
+      const fromOffset = nodeOffsetsRef.current.get(ends.from);
+      const toOffset = nodeOffsetsRef.current.get(ends.to);
+      const adjusted = points.map((point, index) => {
+        if (index === 0 && fromOffset) return { x: point.x + fromOffset.x, y: point.y + fromOffset.y };
+        if (index === points.length - 1 && toOffset) return { x: point.x + toOffset.x, y: point.y + toOffset.y };
+        return point;
+      });
+      path.setAttribute('d', pathForPoints(adjusted));
+      path.setAttribute('data-points', encodePoints(adjusted));
+    });
+  }, [knownNodeIds]);
+
+  const applyNodeOffsets = useCallback(() => {
+    nodeOffsetsRef.current.forEach((offset, id) => applyNodeOffset(id, offset));
+    applyEdgeOffsets();
+  }, [applyEdgeOffsets, applyNodeOffset]);
+
   const finishInlineEdit = useCallback((commit: boolean) => {
     if (!editingNodeId) return;
     const id = editingNodeId;
@@ -177,6 +248,10 @@ export function Preview(): JSX.Element {
     const id = `mdve-svg-${++renderSeq}`;
 
     (async () => {
+      if (renderedSourceRef.current !== source) {
+        nodeOffsetsRef.current.clear();
+        renderedSourceRef.current = source;
+      }
       if (!source.trim()) {
         if (hostRef.current) hostRef.current.innerHTML = '';
         setRenderError(null);
@@ -219,6 +294,7 @@ export function Preview(): JSX.Element {
             beginInlineEdit(nodeId);
           });
           nodeElement.addEventListener('click', () => {
+            if (draggedRef.current) return;
             select({ kind: 'node', id: nodeId });
             beginInlineEdit(nodeId);
           });
@@ -247,6 +323,7 @@ export function Preview(): JSX.Element {
           }
           path.parentElement?.insertBefore(hit, path);
         });
+        applyNodeOffsets();
         if (!manualViewRef.current) fitToView();
         setRenderError(null);
       } catch (err) {
@@ -260,7 +337,7 @@ export function Preview(): JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [beginInlineEdit, select, source, diagram, knownNodeIds, setRenderError, fitToView]);
+  }, [applyNodeOffsets, beginInlineEdit, select, source, diagram, knownNodeIds, setRenderError, fitToView]);
 
   // Refit when the pane itself changes size.
   useEffect(() => {
@@ -431,9 +508,20 @@ export function Preview(): JSX.Element {
     const drag = dragRef.current;
     if (!drag) return;
     if (Math.abs(clientX - drag.x) > 3 || Math.abs(clientY - drag.y) > 3) drag.moved = true;
+    if (drag.kind === 'node') {
+      const scale = Math.max(0.05, view.scale);
+      const offset = {
+        x: drag.ox + (clientX - drag.x) / scale,
+        y: drag.oy + (clientY - drag.y) / scale,
+      };
+      nodeOffsetsRef.current.set(drag.id, offset);
+      applyNodeOffset(drag.id, offset);
+      applyEdgeOffsets();
+      return;
+    }
     manualViewRef.current = true;
     setView((v) => ({ ...v, x: drag.ox + (clientX - drag.x), y: drag.oy + (clientY - drag.y) }));
-  }, []);
+  }, [applyEdgeOffsets, applyNodeOffset, view.scale]);
 
   const endDrag = useCallback(() => {
     if (dragRef.current?.moved) {
@@ -450,7 +538,25 @@ export function Preview(): JSX.Element {
   const onPointerDown = useCallback((event: React.PointerEvent) => {
     if (event.button !== 0) return;
     dragCleanupRef.current?.();
-    dragRef.current = { x: event.clientX, y: event.clientY, ox: view.x, oy: view.y, moved: false };
+    const target = event.target as Element;
+    const nextSelection = selectionForTarget(target, diagram, knownNodeIds);
+    const isNodeDrag = nextSelection?.kind === 'node' && editable;
+    if (isNodeDrag) {
+      const offset = nodeOffsetsRef.current.get(nextSelection.id) ?? { x: 0, y: 0 };
+      select(nextSelection);
+      dragRef.current = {
+        kind: 'node',
+        id: nextSelection.id,
+        x: event.clientX,
+        y: event.clientY,
+        ox: offset.x,
+        oy: offset.y,
+        moved: false,
+      };
+    } else {
+      dragRef.current = { kind: 'canvas', x: event.clientX, y: event.clientY, ox: view.x, oy: view.y, moved: false };
+    }
+    if (!isNodeDrag) event.preventDefault();
     const onWindowMove = (moveEvent: PointerEvent) => moveDrag(moveEvent.clientX, moveEvent.clientY);
     const onWindowEnd = () => endDrag();
     window.addEventListener('pointermove', onWindowMove);
@@ -461,7 +567,7 @@ export function Preview(): JSX.Element {
       window.removeEventListener('pointerup', onWindowEnd);
       window.removeEventListener('pointercancel', onWindowEnd);
     };
-  }, [endDrag, moveDrag, view.x, view.y]);
+  }, [diagram, editable, endDrag, knownNodeIds, moveDrag, select, view.x, view.y]);
 
   // Centre the scaled diagram in the pane, then apply the user's pan.
   const offsetX = (canvasSize.width - content.width * view.scale) / 2 + view.x;
