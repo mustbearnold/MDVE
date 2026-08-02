@@ -8,10 +8,20 @@ import { useStore } from '../state/store';
 const theme = EditorView.theme(
   {
     '&': { height: '100%', fontSize: '13px', backgroundColor: 'transparent' },
-    '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', lineHeight: '1.55' },
-    '.cm-content': { caretColor: '#e6edf3' },
-    '.cm-gutters': { backgroundColor: 'transparent', border: 'none', color: '#4b5563' },
-    '.cm-activeLine': { backgroundColor: 'rgba(255,255,255,0.03)' },
+    '.cm-scroller': {
+      padding: '12px 0 24px',
+      fontFamily: '"JetBrains Mono", "SFMono-Regular", Consolas, monospace',
+      lineHeight: '1.65',
+    },
+    '.cm-content': { caretColor: '#d8dadd', padding: '0 16px 0 8px' },
+    '.cm-gutters': {
+      padding: '0 8px 0 12px',
+      backgroundColor: 'transparent',
+      border: 'none',
+      color: '#52607a',
+    },
+    '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.045)' },
+    '.cm-activeLineGutter': { color: '#c4c6c9', backgroundColor: 'transparent' },
     '&.cm-focused': { outline: '2px solid var(--focus)', outlineOffset: '-2px' },
   },
   { dark: true },
