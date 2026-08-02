@@ -2979,6 +2979,16 @@ button {
   }
 }
 
+@media (max-width: 1120px) {
+  :root {
+    --control-height: 44px;
+  }
+
+  .preview-tools .icon-button {
+    min-height: 42px;
+  }
+}
+
 .focus-exit {
   position: absolute;
   top: calc(var(--pane-header-height) + 8px);
@@ -3024,5 +3034,231 @@ button {
   .focus-exit {
     top: calc(var(--pane-header-height) + 8px);
     left: 8px;
+  }
+}
+
+/* V3 polish ---------------------------------------------------------- */
+
+:root {
+  --control-height: 36px;
+  --accent: #72a7f4;
+  --accent-strong: #8db8ff;
+  --accent-cyan: #72a7f4;
+  --focus: #9fc4ff;
+  --radius-sm: 7px;
+  --radius-md: 9px;
+  --radius-lg: 12px;
+}
+
+.toolbar {
+  gap: 8px;
+  padding: 8px 14px;
+}
+
+.toolbar-context,
+.toolbar-group {
+  gap: 8px;
+}
+
+.toolbar-context {
+  min-width: 0;
+}
+
+.product-name {
+  font-size: 11px;
+}
+
+.diagram-select {
+  min-width: 112px;
+}
+
+.diagram-search {
+  width: 140px;
+}
+
+.save-status {
+  gap: 6px;
+  font-size: 11px;
+}
+
+.toolbar-edit {
+  gap: 4px;
+  padding-left: 8px;
+}
+
+.direction-control {
+  gap: 5px;
+  font-size: 11px;
+}
+
+.direction-control select {
+  width: 142px;
+}
+
+.pane-header {
+  min-height: 42px;
+  padding-inline: 14px;
+}
+
+.pane-header h2,
+.chat-header h2,
+.inspector h2 {
+  font-size: 12px;
+}
+
+.side-panel-actions {
+  min-height: 42px;
+  padding-inline: 14px 10px;
+}
+
+.side-panel-title {
+  flex: 0 0 auto;
+}
+
+.side-panel-title span {
+  color: #85868a;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.side-context-tabs {
+  margin-left: auto;
+}
+
+.preview-tools {
+  top: 14px;
+  right: 14px;
+  padding: 4px;
+  border-radius: 10px;
+}
+
+.preview-tools .icon-button {
+  min-height: 34px;
+}
+
+.change-tray {
+  bottom: 14px;
+  width: min(520px, calc(100% - 28px));
+}
+
+.change-tray-form {
+  min-height: 52px;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: 9px;
+}
+
+.change-tray-icon {
+  width: 28px;
+  height: 28px;
+  margin-right: 2px;
+  border-radius: 7px;
+}
+
+.change-tray-icon .icon {
+  width: 15px;
+  height: 15px;
+}
+
+.change-tray-label {
+  font-size: 9px;
+  letter-spacing: 0.07em;
+}
+
+.change-tray-field input {
+  min-height: 22px;
+  font-size: 12px;
+}
+
+.change-tray-submit {
+  min-height: 34px;
+  padding: 5px 7px 5px 9px;
+  font-size: 11px;
+}
+
+.inspector-empty {
+  gap: 18px;
+}
+
+.inspector-empty-intro {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.inspector-empty-intro h2 {
+  margin-bottom: 4px;
+}
+
+.inspector-empty-icon {
+  display: grid;
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  color: #9ebcf0;
+  background: #202a39;
+  border: 1px solid #3d4b62;
+  border-radius: 7px;
+}
+
+.inspector-empty-icon .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.inspector-empty-action {
+  justify-content: flex-start;
+  width: 100%;
+  min-height: 38px;
+}
+
+.inspector-shortcuts {
+  display: grid;
+  gap: 10px;
+  padding-top: 16px;
+  border-top: 1px solid #2b2c2e;
+}
+
+.inspector-shortcut {
+  display: grid;
+  grid-template-columns: minmax(64px, auto) minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  color: #aeb0b3;
+  font-size: 11px;
+}
+
+.inspector-shortcut kbd {
+  justify-self: start;
+  min-width: 58px;
+  padding: 3px 6px;
+  color: #c6c9cd;
+  background: #202123;
+  border-color: #36383b;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.preview-svg g.node.mdve-selected rect,
+.preview-svg g.node.mdve-selected polygon,
+.preview-svg g.node.mdve-selected circle,
+.preview-svg g.node.mdve-selected path,
+.preview-svg g.node:focus-visible rect,
+.preview-svg g.node:focus-visible polygon,
+.preview-svg g.node:focus-visible circle,
+.preview-svg g.node:focus-visible path {
+  stroke: var(--accent) !important;
+  filter: drop-shadow(0 0 5px rgba(114, 167, 244, 0.25));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .preview-svg g.node.mdve-selected rect,
+  .preview-svg g.node.mdve-selected polygon,
+  .preview-svg g.node.mdve-selected circle,
+  .preview-svg g.node.mdve-selected path {
+    filter: none;
   }
 }

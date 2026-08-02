@@ -271,7 +271,7 @@ test('v2 canvas shell exposes activity navigation, command palette, and agent tr
   await expect(page.getByRole('button', { name: 'Ask MDVE to change this diagram' })).toBeVisible();
 
   await page.getByRole('button', { name: 'Open command palette' }).click();
-  const palette = page.getByRole('dialog', { name: 'What do you want to open?' });
+  const palette = page.getByRole('dialog', { name: 'What do you want to do?' });
   await expect(palette).toBeVisible();
   await expect(page.getByRole('searchbox', { name: 'Search commands' })).toBeFocused();
   const paletteAccessibility = await new AxeBuilder({ page }).analyze();
@@ -322,6 +322,28 @@ test('v2 canvas shell exposes activity navigation, command palette, and agent tr
   await expect(palette).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(palette).toBeHidden();
+});
+
+test('v3 command center runs durable diagram edits', async ({ page }) => {
+  const sessionId = await page.evaluate(() => localStorage.getItem('mdve.session'));
+  expect(sessionId).toBeTruthy();
+  await page.getByRole('button', { name: 'Source', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Mermaid source' }).fill('flowchart TD\n  start[Start]\n');
+  await waitForSaved(page, 2);
+  await page.getByRole('button', { name: 'Preview', exact: true }).click();
+
+  await page.keyboard.press('Control+k');
+  const palette = page.getByRole('dialog', { name: 'What do you want to do?' });
+  await palette.getByRole('searchbox', { name: 'Search commands' }).fill('add node');
+  await palette.getByRole('button', { name: 'Add node' }).click();
+
+  await waitForSaved(page, 3);
+  await expect(page.getByRole('button', { name: 'Node: New node' })).toBeVisible();
+  await expect.poll(async () => {
+    const response = await page.request.get(`/api/sessions/${sessionId}`);
+    const body = (await response.json()) as { source: string };
+    return body.source.includes('New node');
+  }).toBe(true);
 });
 
 test('large text, forced colors, and reduced motion preserve the critical workflow', async ({ page }) => {
@@ -589,6 +611,29 @@ test('preview node moves are durable and resettable', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Reset saved node positions' })).toBeDisabled();
 });
 
+test('v3 preview editing has a keyboard nudge path', async ({ page }) => {
+  const sessionId = await page.evaluate(() => localStorage.getItem('mdve.session'));
+  expect(sessionId).toBeTruthy();
+  await page.getByRole('button', { name: 'Source', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Mermaid source' }).fill('flowchart TD\n  start[Start] --> done[Done]\n');
+  await waitForSaved(page, 2);
+  await page.getByRole('button', { name: 'Preview', exact: true }).click();
+
+  const node = page.getByRole('button', { name: 'Node: Start' });
+  await node.focus();
+  await expect(node).toBeFocused();
+  const stageBefore = await page.locator('.preview-stage').getAttribute('style');
+  await page.keyboard.press('Shift+ArrowRight');
+
+  await waitForSaved(page, 3);
+  await expect.poll(async () => {
+    const response = await page.request.get(`/api/sessions/${sessionId}`);
+    const body = (await response.json()) as { source: string };
+    return body.source.includes('%% mdve:position start');
+  }).toBe(true);
+  await expect(page.locator('.preview-stage')).toHaveAttribute('style', stageBefore ?? '');
+});
+
 test('v3 canvas selection groups nodes and commits one layout transaction', async ({ page }) => {
   const sessionId = await page.evaluate(() => localStorage.getItem('mdve.session'));
   expect(sessionId).toBeTruthy();
@@ -729,6 +774,13 @@ test('desktop panels can be collapsed and their dividers resized', async ({ page
   await expect(rightPanel).toBeHidden();
   await page.getByRole('button', { name: 'Open right panel' }).click();
   await expect(rightPanel).toBeVisible();
+
+  const persistedSourceWidth = (await sourcePanel.boundingBox())?.width ?? 0;
+  const persistedRightWidth = (await rightPanel.boundingBox())?.width ?? 0;
+  await page.waitForTimeout(180);
+  await page.reload();
+  await expect.poll(async () => (await sourcePanel.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(persistedSourceWidth - 1);
+  await expect.poll(async () => (await rightPanel.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(persistedRightWidth - 1);
 });
 
 test('browser recovery drafts survive reload and can be promoted from a stale revision', async ({ page }) => {

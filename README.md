@@ -62,6 +62,8 @@ On a desktop layout, drag the Preview canvas to pan, drag a rendered node or
 edge label to reposition it, and click a rendered node to edit its label inline.
 Shift-click nodes to build a multi-selection, drag the selection as a group, and
 use Inspector to align or distribute it as one named edit transaction.
+Focused nodes also support arrow-key nudging (Shift moves by a larger step), so
+every canvas edit has a keyboard path as well as a pointer path.
 Node and edge-label positions are saved as Mermaid-safe `%% mdve:` comments, so
 they survive reloads, undo/history, export, and agent turns; Reset saved node
 positions removes that presentation metadata. Right-click blank preview space

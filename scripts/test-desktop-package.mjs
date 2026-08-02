@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { execFileSync, spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
@@ -7,8 +7,9 @@ import { join, resolve } from 'node:path';
 
 import { chromium } from '@playwright/test';
 
-const appImage = process.argv[2] ? resolve(process.argv[2]) : null;
-if (!appImage) throw new Error('Usage: node scripts/test-desktop-package.mjs <AppImage>');
+const packageJson = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+const defaultAppImage = new URL(`../release/desktop/MDVE-${packageJson.version}-x86_64.AppImage`, import.meta.url);
+const appImage = resolve(process.argv[2] ?? defaultAppImage.pathname);
 
 function availablePort() {
   return new Promise((resolvePort, reject) => {

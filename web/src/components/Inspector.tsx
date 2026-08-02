@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { SHAPES, ShapeName, isReservedId, supportsStructuredEditing } from '../mermaid/parse';
 import { hasOpaqueLinkIndexReferences, hasOpaqueNodeReferences } from '../mermaid/mutate';
 import { useStore } from '../state/store';
+import { Icon } from './Icon';
 
 const ARROWS: { value: string; label: string }[] = [
   { value: '-->', label: 'Arrow' },
@@ -254,10 +255,44 @@ export function Inspector(): JSX.Element {
     );
   }
 
+  const addNode = () => {
+    const existing = new Set(diagram.nodes.map((candidate) => candidate.id));
+    const applied = applyTransaction({ title: 'Add node', operations: [{ kind: 'node.add' }] });
+    const added = applied?.model.nodes.find((candidate) => !existing.has(candidate.id));
+    if (added) select({ kind: 'node', id: added.id });
+  };
+
   return (
-    <aside className="inspector">
-      <h2>Diagram</h2>
-      <p className="muted">Click a node or link in the preview to edit it.</p>
+    <aside className="inspector inspector-empty">
+      <div className="inspector-empty-intro">
+        <span className="inspector-empty-icon" aria-hidden="true"><Icon name="inspector" /></span>
+        <div>
+          <h2>Diagram</h2>
+          <p className="muted">Select a node or link to inspect its properties.</p>
+        </div>
+      </div>
+      <button className="button-primary inspector-empty-action" type="button" onClick={addNode}>
+        <Icon name="plus" />
+        Add node
+      </button>
+      <div className="inspector-shortcuts" aria-label="Preview editing shortcuts">
+        <div className="inspector-shortcut">
+          <kbd>Drag</kbd>
+          <span>Move a node or pan the canvas</span>
+        </div>
+        <div className="inspector-shortcut">
+          <kbd>Enter</kbd>
+          <span>Edit the focused node label</span>
+        </div>
+        <div className="inspector-shortcut">
+          <kbd>← ↑ ↓ →</kbd>
+          <span>Nudge the focused node</span>
+        </div>
+        <div className="inspector-shortcut">
+          <kbd>Right click</kbd>
+          <span>Add, connect, or remove graph elements</span>
+        </div>
+      </div>
       <div className="inspector-meta">
         <span>{diagram.nodes.length} nodes</span>
         <span>{diagram.edges.length} links</span>

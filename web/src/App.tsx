@@ -16,6 +16,32 @@ import { flushDiagramBeforeNavigation, useStore } from './state/store';
 const MIN_SOURCE_WIDTH = 260;
 const MIN_RIGHT_WIDTH = 280;
 const MIN_PREVIEW_WIDTH = 440;
+const WORKBENCH_PREFERENCES_KEY = 'mdve.workbench.preferences';
+
+interface WorkbenchPreferences {
+  sourcePanelOpen?: boolean;
+  rightPanelOpen?: boolean;
+  sourcePanelWidth?: number;
+  rightPanelWidth?: number;
+}
+
+function readWorkbenchPreferences(): WorkbenchPreferences {
+  try {
+    const stored = localStorage.getItem(WORKBENCH_PREFERENCES_KEY);
+    if (!stored) return {};
+    const value = JSON.parse(stored) as unknown;
+    if (!value || typeof value !== 'object') return {};
+    const preferences = value as Record<string, unknown>;
+    return {
+      sourcePanelOpen: typeof preferences.sourcePanelOpen === 'boolean' ? preferences.sourcePanelOpen : undefined,
+      rightPanelOpen: typeof preferences.rightPanelOpen === 'boolean' ? preferences.rightPanelOpen : undefined,
+      sourcePanelWidth: typeof preferences.sourcePanelWidth === 'number' ? preferences.sourcePanelWidth : undefined,
+      rightPanelWidth: typeof preferences.rightPanelWidth === 'number' ? preferences.rightPanelWidth : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
 const Preview = lazy(() => import('./components/Preview').then((module) => ({ default: module.Preview })));
 const OutlinePanel = lazy(() => import('./components/OutlinePanel').then((module) => ({ default: module.OutlinePanel })));
 
@@ -100,11 +126,12 @@ export function App(): JSX.Element {
   const busy = useStore((s) => s.busy);
   const loadSession = useStore((s) => s.loadSession);
   const loadProviders = useStore((s) => s.loadProviders);
+  const [workbenchPreferences] = useState(readWorkbenchPreferences);
   const [activeView, setActiveView] = useState<WorkbenchView>('preview');
-  const [sourcePanelOpen, setSourcePanelOpen] = useState(true);
-  const [rightPanelOpen, setRightPanelOpen] = useState(true);
-  const [sourcePanelWidth, setSourcePanelWidth] = useState(320);
-  const [rightPanelWidth, setRightPanelWidth] = useState(340);
+  const [sourcePanelOpen, setSourcePanelOpen] = useState(workbenchPreferences.sourcePanelOpen ?? true);
+  const [rightPanelOpen, setRightPanelOpen] = useState(workbenchPreferences.rightPanelOpen ?? true);
+  const [sourcePanelWidth, setSourcePanelWidth] = useState(workbenchPreferences.sourcePanelWidth ?? 320);
+  const [rightPanelWidth, setRightPanelWidth] = useState(workbenchPreferences.rightPanelWidth ?? 340);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [contextView, setContextView] = useState<ContextView>('inspector');
   const [focusMode, setFocusMode] = useState(false);
@@ -242,6 +269,23 @@ export function App(): JSX.Element {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        localStorage.setItem(WORKBENCH_PREFERENCES_KEY, JSON.stringify({
+          sourcePanelOpen,
+          rightPanelOpen,
+          sourcePanelWidth,
+          rightPanelWidth,
+        } satisfies WorkbenchPreferences));
+      } catch {
+        // Layout preferences are a convenience; a restricted storage context
+        // must not make the diagram workbench fail to start.
+      }
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [rightPanelOpen, rightPanelWidth, sourcePanelOpen, sourcePanelWidth]);
+
   if (!session) {
     return <div className="boot">Starting MDVE…</div>;
   }
@@ -330,7 +374,6 @@ export function App(): JSX.Element {
               <div className="side-panel-actions desktop-panel-control">
                 <div className="side-panel-title">
                   <span>Context</span>
-                  <strong>{contextView === 'inspector' ? 'Inspect' : contextView === 'outline' ? 'Outline' : contextView === 'agent' ? 'Agent' : 'History'}</strong>
                 </div>
                 <ContextTabs activeView={contextView} onChange={selectContextView} />
                 <button

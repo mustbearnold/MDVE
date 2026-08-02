@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
+import { supportsStructuredEditing } from '../mermaid/parse';
+import { useStore } from '../state/store';
 import type { WorkbenchView } from './WorkbenchTabs';
 
 type Command = {
@@ -7,6 +9,7 @@ type Command = {
   label: string;
   description: string;
   shortcut?: string;
+  disabled?: boolean;
   run: () => void;
 };
 
@@ -30,8 +33,74 @@ export function CommandPalette({
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const diagram = useStore((state) => state.diagram);
+  const renderError = useStore((state) => state.renderError);
+  const session = useStore((state) => state.session);
+  const past = useStore((state) => state.past);
+  const future = useStore((state) => state.future);
+  const agentProposal = useStore((state) => state.agentProposal);
+  const applyTransaction = useStore((state) => state.applyTransaction);
+  const select = useStore((state) => state.select);
+  const undo = useStore((state) => state.undo);
+  const redo = useStore((state) => state.redo);
+  const structuredEditingAvailable = supportsStructuredEditing(diagram, renderError)
+    && !session?.archived
+    && !session?.trashed
+    && !session?.agentLease;
+
+  const dispatchPreviewCommand = (name: 'fit' | 'reset-layout') => {
+    window.dispatchEvent(new CustomEvent(`mdve:${name}`));
+  };
+
+  const addNode = () => {
+    const existing = new Set(diagram.nodes.map((node) => node.id));
+    const applied = applyTransaction({ title: 'Add node', operations: [{ kind: 'node.add' }] });
+    const added = applied?.model.nodes.find((node) => !existing.has(node.id));
+    if (added) {
+      onOpenView('preview');
+      select({ kind: 'node', id: added.id });
+    }
+  };
 
   const commands = useMemo<Command[]>(() => [
+    {
+      id: 'add-node',
+      label: 'Add node',
+      description: 'Create a node and select it in the preview',
+      shortcut: 'N',
+      disabled: !structuredEditingAvailable || Boolean(agentProposal),
+      run: addNode,
+    },
+    {
+      id: 'fit-diagram',
+      label: 'Fit diagram',
+      description: 'Recenter and size the diagram to the canvas',
+      shortcut: 'F',
+      run: () => dispatchPreviewCommand('fit'),
+    },
+    {
+      id: 'reset-layout',
+      label: 'Reset saved layout',
+      description: 'Remove saved node and link-label positions',
+      disabled: !structuredEditingAvailable,
+      run: () => dispatchPreviewCommand('reset-layout'),
+    },
+    {
+      id: 'undo',
+      label: 'Undo last edit',
+      description: 'Revert the most recent source or canvas transaction',
+      shortcut: 'Ctrl Z',
+      disabled: past.length === 0,
+      run: undo,
+    },
+    {
+      id: 'redo',
+      label: 'Redo last edit',
+      description: 'Restore the most recently undone transaction',
+      shortcut: 'Ctrl Shift Z',
+      disabled: future.length === 0,
+      run: redo,
+    },
     {
       id: 'library',
       label: 'Open library',
@@ -88,7 +157,7 @@ export function CommandPalette({
       shortcut: '⌘⇧↵',
       run: onToggleFocus,
     },
-  ], [focusMode, onLibrary, onOpenOutline, onOpenView, onToggleFocus]);
+  ], [addNode, agentProposal, dispatchPreviewCommand, focusMode, future.length, onLibrary, onOpenOutline, onOpenView, onToggleFocus, past.length, redo, select, structuredEditingAvailable, undo]);
 
   const filteredCommands = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -110,7 +179,7 @@ export function CommandPalette({
   if (!open) return null;
 
   const runCommand = (command: Command | undefined) => {
-    if (!command) return;
+    if (!command || command.disabled) return;
     command.run();
     onClose();
   };
@@ -133,7 +202,7 @@ export function CommandPalette({
         <div className="command-palette-header">
           <div>
             <span className="command-palette-eyebrow">MDVE command center</span>
-            <h2 id="command-palette-heading">What do you want to open?</h2>
+            <h2 id="command-palette-heading">What do you want to do?</h2>
           </div>
           <button type="button" className="command-palette-close" aria-label="Close command palette" onClick={onClose}>
             Esc
@@ -169,6 +238,7 @@ export function CommandPalette({
               key={command.id}
               className={`command-palette-item${activeIndex === index ? ' command-palette-item-active' : ''}`}
               type="button"
+              disabled={command.disabled}
               onMouseEnter={() => setActiveIndex(index)}
               onClick={() => runCommand(command)}
             >

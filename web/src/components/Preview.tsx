@@ -367,6 +367,7 @@ export function Preview(): JSX.Element {
           nodeElement.setAttribute('role', 'button');
           nodeElement.setAttribute('tabindex', '0');
           nodeElement.setAttribute('aria-label', `Node: ${accessibleLabel}`);
+          nodeElement.setAttribute('aria-keyshortcuts', 'Enter ArrowUp ArrowDown ArrowLeft ArrowRight Delete');
         });
         hostRef.current.querySelectorAll('g.edgeLabel').forEach((labelElement) => {
           const ends = edgeEndsOfLabel(labelElement, knownNodeIds);
@@ -398,6 +399,7 @@ export function Preview(): JSX.Element {
             hit.setAttribute('role', 'button');
             hit.setAttribute('tabindex', '0');
             hit.setAttribute('aria-label', `Link: ${ends.from} to ${ends.to}`);
+            hit.setAttribute('aria-keyshortcuts', 'Space Delete');
           }
           path.parentElement?.insertBefore(hit, path);
         });
@@ -526,6 +528,20 @@ export function Preview(): JSX.Element {
 
   const cancelConnection = useCallback(() => setConnectionSourceId(null), []);
 
+  const nudgeNode = useCallback((targetId: string, delta: Point) => {
+    if (!structuredEditingAvailable) return;
+    const ids = selection.kind === 'nodes' && selection.ids.includes(targetId) ? selection.ids : [targetId];
+    const positions: Record<string, Point> = {};
+    ids.forEach((id) => {
+      const origin = nodeOffsetsRef.current.get(id) ?? { x: 0, y: 0 };
+      positions[id] = { x: origin.x + delta.x, y: origin.y + delta.y };
+    });
+    applyTransaction({
+      title: ids.length > 1 ? `Nudge ${ids.length} nodes` : 'Nudge node',
+      operations: [{ kind: 'layout.move-many', positions }],
+    });
+  }, [applyTransaction, selection, structuredEditingAvailable]);
+
   const onClick = useCallback(
     (event: React.MouseEvent) => {
       if (suppressNextClickRef.current) {
@@ -613,6 +629,19 @@ export function Preview(): JSX.Element {
     applyTransaction({ title: 'Reset diagram layout', operations: [{ kind: 'layout.reset' }] });
   }, [applyTransaction, hasSavedLayout, structuredEditingAvailable]);
 
+  useEffect(() => {
+    const fit = () => {
+      manualViewRef.current = false;
+      fitToView();
+    };
+    window.addEventListener('mdve:fit', fit);
+    window.addEventListener('mdve:reset-layout', resetLayout);
+    return () => {
+      window.removeEventListener('mdve:fit', fit);
+      window.removeEventListener('mdve:reset-layout', resetLayout);
+    };
+  }, [fitToView, resetLayout]);
+
   const editNodeFromContextMenu = useCallback(() => {
     const target = contextMenu?.selection;
     if (!target || target.kind !== 'node') return;
@@ -653,10 +682,32 @@ export function Preview(): JSX.Element {
 
   const onKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
-      if (event.key !== 'Enter' && event.key !== ' ') return;
+      const isArrow = event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'ArrowUp' || event.key === 'ArrowDown';
+      if (!isArrow && event.key !== 'Enter' && event.key !== ' ') return;
       const target = event.target as Element;
       const nextSelection = selectionForTarget(target, diagram, knownNodeIds);
       if (!nextSelection) return;
+
+      const step = event.shiftKey ? 10 : 1;
+      const nudge = event.key === 'ArrowLeft'
+        ? { x: -step, y: 0 }
+        : event.key === 'ArrowRight'
+          ? { x: step, y: 0 }
+          : event.key === 'ArrowUp'
+            ? { x: 0, y: -step }
+            : { x: 0, y: step };
+      if (
+        nextSelection.kind === 'node'
+        && (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'ArrowUp' || event.key === 'ArrowDown')
+        && !event.altKey
+        && !event.ctrlKey
+        && !event.metaKey
+      ) {
+        event.preventDefault();
+        nudgeNode(nextSelection.id, nudge);
+        return;
+      }
+
       event.preventDefault();
       if (nextSelection.kind === 'node' && finishConnection(nextSelection.id)) {
         return;
@@ -667,7 +718,7 @@ export function Preview(): JSX.Element {
         select(nextSelection);
       }
     },
-    [beginInlineEdit, diagram, finishConnection, knownNodeIds, select],
+    [beginInlineEdit, diagram, finishConnection, knownNodeIds, nudgeNode, select],
   );
 
   const moveDrag = useCallback((clientX: number, clientY: number) => {
@@ -852,6 +903,7 @@ export function Preview(): JSX.Element {
         ref={canvasRef}
         role="region"
         aria-label="Diagram preview"
+        aria-describedby="preview-interaction-help"
         onClick={onClick}
         onDoubleClick={onDoubleClick}
         onContextMenu={onContextMenu}
@@ -861,6 +913,9 @@ export function Preview(): JSX.Element {
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
       >
+        <p id="preview-interaction-help" className="sr-only">
+          Click a node to select and edit its label. Drag a node to move it, drag empty space to pan, use the mouse wheel to zoom, and right-click to open graph actions. Focused nodes can be nudged with the arrow keys.
+        </p>
         <div
           className="preview-stage"
           style={{ transform: stageTransform }}
