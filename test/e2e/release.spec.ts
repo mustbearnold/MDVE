@@ -1,6 +1,8 @@
 import { expect, test, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
+const browserErrors = new WeakMap<Page, string[]>();
+
 async function waitForSaved(page: Page, revision: number): Promise<void> {
   await expect(page.getByText(`Saved · revision ${revision}`)).toBeVisible({ timeout: 10_000 });
 }
@@ -39,6 +41,13 @@ async function waitForLibraryScope(page: Page, scope: string, sessionId: string)
 }
 
 test.beforeEach(async ({ page }, testInfo) => {
+  const errors: string[] = [];
+  browserErrors.set(page, errors);
+  page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`));
+  page.on('console', (message) => {
+    if (message.type() === 'error') errors.push(`console: ${message.text()}`);
+  });
+
   await page.setViewportSize({ width: 800, height: 900 });
   const response = await page.request.post('/api/sessions', {
     data: { title: `Browser ${testInfo.project.name} ${testInfo.testId}` },
@@ -51,6 +60,10 @@ test.beforeEach(async ({ page }, testInfo) => {
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Preview' })).toBeVisible();
   await waitForSaved(page, 1);
+});
+
+test.afterEach(async ({ page }) => {
+  expect(browserErrors.get(page) ?? [], 'browser console/page errors').toEqual([]);
 });
 
 test('the packaged browser workflow edits, saves, previews, exports, and restores history', async ({ page }) => {

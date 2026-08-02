@@ -18,7 +18,10 @@ export function App(): JSX.Element {
 
   useEffect(() => {
     void loadSession(localStorage.getItem('mdve.session') ?? undefined, { startup: true }).catch(() => void loadSession());
-    void loadProviders();
+    // A page reload can abort the initial provider request before the next
+    // application instance starts. Treat that shutdown race like the session
+    // bootstrap race instead of surfacing an unhandled browser error.
+    void loadProviders().catch(() => undefined);
   }, [loadSession, loadProviders]);
 
   // Agent and out-of-band file edits arrive over SSE.
