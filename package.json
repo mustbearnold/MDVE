@@ -80,6 +80,10 @@
     ],
     "linux": {
       "category": "Development",
+      "executableArgs": [
+        "--ozone-platform=x11",
+        "--no-sandbox"
+      ],
       "syncDesktopName": true,
       "target": ["AppImage"]
     }

@@ -53,6 +53,62 @@ async function waitForPage(browser) {
   throw new Error('Packaged MDVE did not open its loopback workbench page');
 }
 
+function hasPackagedMainProcess(userDataDir) {
+  return execFileSync('ps', ['-eo', 'args='], { encoding: 'utf8' })
+    .split('\n')
+    .some((line) => line.includes(`--user-data-dir=${userDataDir}`) && line.includes('/mdve') && !line.includes('--type='));
+}
+
+async function waitForReadyLog(child, outputRef) {
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    if (outputRef.value.includes('MDVE server ready on ')) return;
+    if (child.exitCode !== null) throw new Error(`Packaged MDVE exited before its server became ready with code ${child.exitCode}`);
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
+  }
+  throw new Error(`Packaged MDVE did not report readiness\n${outputRef.value.slice(-2_000)}`);
+}
+
+async function runDesktopStabilityCheck(appImage) {
+  const dataRoot = await mkdtemp(join(tmpdir(), 'mdve-desktop-stability-'));
+  const electronDataRoot = join(dataRoot, 'electron');
+  const outputRef = { value: '' };
+  const child = spawn(appImage, [
+    '--appimage-extract-and-run',
+    '--ozone-platform=x11',
+    '--no-sandbox',
+    `--user-data-dir=${electronDataRoot}`,
+  ], {
+    env: { ...process.env, MDVE_HOME: join(dataRoot, 'data') },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  child.stdout.on('data', (chunk) => {
+    outputRef.value = `${outputRef.value}${chunk.toString()}`.slice(-20_000);
+  });
+  child.stderr.on('data', (chunk) => {
+    outputRef.value = `${outputRef.value}${chunk.toString()}`.slice(-20_000);
+  });
+
+  try {
+    await waitForReadyLog(child, outputRef);
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 10_000));
+    assert.equal(
+      hasPackagedMainProcess(electronDataRoot),
+      true,
+      `Packaged MDVE main process disappeared during the desktop stability window\n${outputRef.value.slice(-2_000)}`,
+    );
+    console.log(JSON.stringify({ appImage, stability: 'passed' }, null, 2));
+  } finally {
+    if (child.exitCode === null) {
+      child.kill('SIGTERM');
+      if (!(await waitForExit(child, 2_000))) child.kill('SIGKILL');
+      await waitForExit(child, 2_000);
+    }
+    killPackagedProcesses(electronDataRoot);
+    await rm(dataRoot, { recursive: true, force: true });
+  }
+}
+
 function waitForExit(child, timeoutMs) {
   if (child.exitCode !== null) return Promise.resolve(true);
   return new Promise((resolveExit) => {
@@ -95,6 +151,7 @@ const cdpPort = await availablePort();
 const electronDataRoot = join(dataRoot, 'electron');
 const child = spawn(appImage, [
   '--appimage-extract-and-run',
+  '--ozone-platform=x11',
   '--no-sandbox',
   `--remote-debugging-port=${cdpPort}`,
   `--user-data-dir=${electronDataRoot}`,
@@ -104,6 +161,7 @@ const child = spawn(appImage, [
 });
 let browser;
 let stderr = '';
+child.stdout.on('data', () => undefined);
 child.stderr.on('data', (chunk) => {
   stderr += chunk.toString();
 });
@@ -131,3 +189,5 @@ try {
   killPackagedProcesses(electronDataRoot);
   await rm(dataRoot, { recursive: true, force: true });
 }
+
+await runDesktopStabilityCheck(appImage);

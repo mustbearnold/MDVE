@@ -9,8 +9,22 @@ import { app, BrowserWindow, dialog } from 'electron';
 const HOST = '127.0.0.1';
 const READY_TIMEOUT_MS = 15_000;
 
+if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('disable-gpu');
+  app.commandLine.appendSwitch('ozone-platform', 'x11');
+}
+
 let mainWindow;
 let serverOrigin;
+
+function presentWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+  mainWindow.moveTop();
+  app.focus({ steal: true });
+}
 
 function availablePort() {
   return new Promise((resolve, reject) => {
@@ -72,7 +86,7 @@ async function createWindow() {
       height: 960,
       minWidth: 980,
       minHeight: 640,
-      show: false,
+      show: true,
       backgroundColor: '#0b0f14',
       webPreferences: {
         contextIsolation: true,
@@ -80,15 +94,16 @@ async function createWindow() {
         sandbox: true,
       },
     });
-    mainWindow.once('ready-to-show', () => mainWindow.show());
+    mainWindow.once('ready-to-show', presentWindow);
     await mainWindow.loadURL(bootstrapUrl);
+    presentWindow();
   } else if (!mainWindow) {
     mainWindow = new BrowserWindow({
       width: 1440,
       height: 960,
       minWidth: 980,
       minHeight: 640,
-      show: false,
+      show: true,
       backgroundColor: '#0b0f14',
       webPreferences: {
         contextIsolation: true,
@@ -96,8 +111,9 @@ async function createWindow() {
         sandbox: true,
       },
     });
-    mainWindow.once('ready-to-show', () => mainWindow.show());
+    mainWindow.once('ready-to-show', presentWindow);
     await mainWindow.loadURL(serverOrigin);
+    presentWindow();
   }
   mainWindow.on('closed', () => {
     mainWindow = undefined;
@@ -109,9 +125,7 @@ if (!singleInstance) {
   app.quit();
 } else {
   app.on('second-instance', () => {
-    if (!mainWindow) return;
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.focus();
+    presentWindow();
   });
 
   app.whenReady().then(createWindow).catch((error) => {
