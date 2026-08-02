@@ -159,7 +159,7 @@ export function ChatPanel(): JSX.Element {
         {provider && !provider.status.ok && <p className="chat-warning">{provider.status.detail}</p>}
       </header>
 
-      <div className="chat-log" ref={scrollRef} role="log" aria-live="polite" aria-label="Agent conversation">
+      <div className="chat-log" ref={scrollRef} role="log" tabIndex={0} aria-live="polite" aria-label="Agent conversation">
         {chat.length === 0 && (
           <div className="chat-empty">
             <strong>Describe a diagram change</strong>

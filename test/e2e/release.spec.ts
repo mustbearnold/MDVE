@@ -177,6 +177,54 @@ test('large text, forced colors, and reduced motion preserve the critical workfl
   await expect(page.getByRole('button', { name: 'Node: Large text' })).toBeVisible();
 });
 
+test('400% zoom and text spacing keep toolbar controls usable', async ({ page }) => {
+  // A 1280 CSS-pixel desktop viewport at 400% browser zoom has a 320 CSS-pixel
+  // layout viewport. Add the WCAG text-spacing override on top of that narrow
+  // layout so the assertion covers both reflow and expanded glyph spacing.
+  await page.setViewportSize({ width: 320, height: 900 });
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = '200%';
+    document.documentElement.style.letterSpacing = '0.12em';
+    document.documentElement.style.wordSpacing = '0.16em';
+    document.documentElement.style.lineHeight = '1.5';
+  });
+
+  const metrics = await page.evaluate(() => {
+    const visible = (element: Element) => {
+      const style = getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+    };
+    const controls = [...document.querySelectorAll('.toolbar button, .toolbar select, .toolbar input, .toolbar summary')]
+      .filter(visible)
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        return {
+          name: element.getAttribute('aria-label') ?? element.textContent?.trim().slice(0, 40) ?? '',
+          width: rect.width,
+          height: rect.height,
+          left: rect.left,
+          right: rect.right,
+        };
+      });
+    return {
+      scrollWidth: document.documentElement.scrollWidth,
+      innerWidth: window.innerWidth,
+      controls,
+      overflow: controls.filter((control) => control.left < -1 || control.right > window.innerWidth + 1),
+      undersized: controls.filter((control) => control.width < 24 || control.height < 24),
+    };
+  });
+
+  expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.innerWidth + 1);
+  expect(metrics.overflow).toEqual([]);
+  expect(metrics.undersized).toEqual([]);
+
+  await page.getByRole('button', { name: 'Source', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Mermaid source' }).fill('flowchart TD\n  reflow[Reflow] --> done[Done]\n');
+  await waitForSaved(page, 2);
+});
+
 test('keyboard-only editing, preview, and recovery remain operable', async ({ page }) => {
   const sourceTab = page.getByRole('button', { name: 'Source', exact: true });
   await sourceTab.focus();

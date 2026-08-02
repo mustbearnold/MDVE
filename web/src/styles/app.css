@@ -1117,22 +1117,26 @@ button.danger:hover:not(:disabled) {
   }
 
   .toolbar-context {
+    align-content: flex-start;
     gap: 6px;
+    flex-wrap: wrap;
   }
 
   .product-identity {
+    flex: 0 0 auto;
     gap: 0;
   }
 
   .diagram-select {
+    flex: 1 0 100%;
     width: 100%;
     min-width: 0;
     max-width: none;
   }
 
   .library-scope {
+    flex: 1 0 100%;
     min-width: 0;
-    flex: 0 1 118px;
   }
 
   .diagram-search {
@@ -1147,7 +1151,14 @@ button.danger:hover:not(:disabled) {
   .diagram-search {
     width: 100%;
     min-width: 0;
-    flex: 1 1 100%;
+    flex: 1 0 100%;
+  }
+
+  .save-status {
+    flex: 1 0 100%;
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .toolbar-edit {
