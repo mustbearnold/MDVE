@@ -23,7 +23,8 @@ function PreviewSlot(): JSX.Element {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => setReady(true), 200);
+    const delay = navigator.userAgent.includes('Firefox') ? 50 : 0;
+    const timer = window.setTimeout(() => setReady(true), delay);
     return () => window.clearTimeout(timer);
   }, []);
 
