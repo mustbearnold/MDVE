@@ -250,6 +250,77 @@ test('keyboard-only editing, preview, and recovery remain operable', async ({ pa
   await waitForSaved(page, 3);
 });
 
+test('preview supports pointer dragging and direct node label editing', async ({ page }) => {
+  await page.getByRole('button', { name: 'Source', exact: true }).click();
+  const source = page.getByRole('textbox', { name: 'Mermaid source' });
+  await source.fill('flowchart TD\n  start[Start] --> done[Done]\n');
+  await waitForSaved(page, 2);
+  await page.getByRole('button', { name: 'Preview', exact: true }).click();
+
+  const node = page.getByRole('button', { name: 'Node: Start' });
+  await expect(node).toBeVisible();
+  const stage = page.locator('.preview-stage');
+  const beforeTransform = await stage.getAttribute('style');
+  const nodeBoxBeforeDrag = await node.boundingBox();
+  expect(nodeBoxBeforeDrag).toBeTruthy();
+  await page.mouse.move(nodeBoxBeforeDrag!.x + nodeBoxBeforeDrag!.width / 2, nodeBoxBeforeDrag!.y + nodeBoxBeforeDrag!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(nodeBoxBeforeDrag!.x + nodeBoxBeforeDrag!.width / 2 + 72, nodeBoxBeforeDrag!.y + nodeBoxBeforeDrag!.height / 2 + 28, { steps: 5 });
+  await page.mouse.up();
+  await expect.poll(() => stage.getAttribute('style')).not.toBe(beforeTransform);
+
+  await page.waitForTimeout(120);
+  const editBox = await node.boundingBox();
+  expect(editBox).toBeTruthy();
+  await page.mouse.click(editBox!.x + editBox!.width / 2, editBox!.y + editBox!.height / 2);
+  const editor = page.getByRole('textbox', { name: 'Edit node label' });
+  await expect(editor).toBeVisible();
+  await editor.fill('Begin');
+  await editor.press('Enter');
+  await waitForSaved(page, 3);
+  await expect(page.getByRole('button', { name: 'Node: Begin' })).toBeVisible();
+});
+
+test('desktop panels can be collapsed and their dividers resized', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const sourcePanel = page.locator('#workbench-source');
+  const rightPanel = page.locator('#workbench-side');
+  await expect(sourcePanel).toBeVisible();
+  await expect(rightPanel).toBeVisible();
+
+  const leftDivider = page.getByRole('separator', { name: 'Resize source panel' });
+  const leftBefore = await sourcePanel.boundingBox();
+  const leftDividerBox = await leftDivider.boundingBox();
+  expect(leftBefore).toBeTruthy();
+  expect(leftDividerBox).toBeTruthy();
+  await page.mouse.move(leftDividerBox!.x + leftDividerBox!.width / 2, leftDividerBox!.y + leftDividerBox!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(leftDividerBox!.x + leftDividerBox!.width / 2 + 96, leftDividerBox!.y + leftDividerBox!.height / 2, { steps: 5 });
+  await page.mouse.up();
+  await expect.poll(async () => (await sourcePanel.boundingBox())?.width ?? 0).toBeGreaterThan((leftBefore!.width ?? 0) + 50);
+
+  await page.getByRole('button', { name: 'Close source panel' }).click();
+  await expect(sourcePanel).toBeHidden();
+  await page.getByRole('button', { name: 'Open source panel' }).click();
+  await expect(sourcePanel).toBeVisible();
+
+  const rightDivider = page.getByRole('separator', { name: 'Resize right panel' });
+  const rightBefore = await rightPanel.boundingBox();
+  const rightDividerBox = await rightDivider.boundingBox();
+  expect(rightBefore).toBeTruthy();
+  expect(rightDividerBox).toBeTruthy();
+  await page.mouse.move(rightDividerBox!.x + rightDividerBox!.width / 2, rightDividerBox!.y + rightDividerBox!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(rightDividerBox!.x + rightDividerBox!.width / 2 - 96, rightDividerBox!.y + rightDividerBox!.height / 2, { steps: 5 });
+  await page.mouse.up();
+  await expect.poll(async () => (await rightPanel.boundingBox())?.width ?? 0).toBeGreaterThan((rightBefore!.width ?? 0) + 50);
+
+  await page.getByRole('button', { name: 'Close right panel' }).click();
+  await expect(rightPanel).toBeHidden();
+  await page.getByRole('button', { name: 'Open right panel' }).click();
+  await expect(rightPanel).toBeVisible();
+});
+
 test('browser recovery drafts survive reload and can be promoted from a stale revision', async ({ page }) => {
   const sessionId = await page.evaluate(() => localStorage.getItem('mdve.session'));
   expect(sessionId).toBeTruthy();

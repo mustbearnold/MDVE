@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { subscribeDiagram } from './api';
 import { ChatPanel } from './components/ChatPanel';
@@ -10,11 +10,91 @@ import { Toolbar } from './components/Toolbar';
 import { WorkbenchTabs, type WorkbenchView } from './components/WorkbenchTabs';
 import { flushDiagramBeforeNavigation, useStore } from './state/store';
 
+const MIN_SOURCE_WIDTH = 260;
+const MIN_RIGHT_WIDTH = 280;
+const MIN_PREVIEW_WIDTH = 440;
+
+function PanelDivider({
+  side,
+  width,
+  onWidthChange,
+  hidden,
+}: {
+  side: 'source' | 'right';
+  width: number;
+  onWidthChange: (width: number) => void;
+  hidden: boolean;
+}): JSX.Element {
+  const dragRef = useRef<{ x: number; width: number } | null>(null);
+  const direction = side === 'source' ? 1 : -1;
+  const label = side === 'source' ? 'Resize source panel' : 'Resize right panel';
+
+  const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    dragRef.current = { x: event.clientX, width };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    onWidthChange(drag.width + direction * (event.clientX - drag.x));
+  };
+
+  const endDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    dragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+
+  return (
+    <div
+      className={`panel-divider${hidden ? ' panel-divider-hidden' : ''}`}
+      role="separator"
+      aria-label={label}
+      aria-orientation="vertical"
+      aria-valuemin={side === 'source' ? MIN_SOURCE_WIDTH : MIN_RIGHT_WIDTH}
+      aria-valuemax={1200}
+      aria-valuenow={Math.round(width)}
+      tabIndex={hidden ? -1 : 0}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+      onKeyDown={(event) => {
+        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+        event.preventDefault();
+        const delta = event.key === 'ArrowRight' ? 16 : -16;
+        onWidthChange(width + direction * delta);
+      }}
+    >
+      <span aria-hidden="true" />
+    </div>
+  );
+}
+
 export function App(): JSX.Element {
   const session = useStore((s) => s.session);
   const loadSession = useStore((s) => s.loadSession);
   const loadProviders = useStore((s) => s.loadProviders);
   const [activeView, setActiveView] = useState<WorkbenchView>('preview');
+  const [sourcePanelOpen, setSourcePanelOpen] = useState(true);
+  const [rightPanelOpen, setRightPanelOpen] = useState(true);
+  const [sourcePanelWidth, setSourcePanelWidth] = useState(320);
+  const [rightPanelWidth, setRightPanelWidth] = useState(340);
+  const layoutRef = useRef<HTMLElement>(null);
+
+  const updatePanelWidth = useCallback((side: 'source' | 'right', requested: number) => {
+    const layoutWidth = layoutRef.current?.getBoundingClientRect().width ?? window.innerWidth;
+    const otherWidth = side === 'source'
+      ? rightPanelOpen ? rightPanelWidth : 0
+      : sourcePanelOpen ? sourcePanelWidth : 0;
+    const minimum = side === 'source' ? MIN_SOURCE_WIDTH : MIN_RIGHT_WIDTH;
+    const maximum = Math.max(minimum, layoutWidth - otherWidth - MIN_PREVIEW_WIDTH - 20);
+    const next = Math.round(Math.min(maximum, Math.max(minimum, requested)));
+    if (side === 'source') setSourcePanelWidth(next);
+    else setRightPanelWidth(next);
+  }, [rightPanelOpen, rightPanelWidth, sourcePanelOpen, sourcePanelWidth]);
 
   useEffect(() => {
     void loadSession(localStorage.getItem('mdve.session') ?? undefined, { startup: true }).catch(() => void loadSession());
@@ -84,18 +164,40 @@ export function App(): JSX.Element {
       </a>
       <Toolbar />
       <WorkbenchTabs activeView={activeView} onChange={setActiveView} />
-      <main className="layout" id="workbench-main">
+      <main
+        className="layout"
+        id="workbench-main"
+        ref={layoutRef}
+        style={{
+          gridTemplateColumns: `${sourcePanelOpen ? `${sourcePanelWidth}px 10px` : '0px 0px'} minmax(0, 1fr) ${rightPanelOpen ? `10px ${rightPanelWidth}px` : '0px 0px'}`,
+        }}
+      >
         <section
-          className={`pane pane-code${activeView === 'source' ? ' pane-active' : ''}`}
+          className={`pane pane-code${activeView === 'source' ? ' pane-active' : ''}${sourcePanelOpen ? '' : ' pane-collapsed'}`}
           id="workbench-source"
           aria-labelledby="source-heading"
         >
           <header className="pane-header">
             <h2 id="source-heading">Source</h2>
             <span>Mermaid</span>
+            <button
+              className="panel-close-button desktop-panel-control"
+              type="button"
+              aria-label="Close source panel"
+              title="Close source panel"
+              onClick={() => setSourcePanelOpen(false)}
+            >
+              ×
+            </button>
           </header>
           <CodePane />
         </section>
+        <PanelDivider
+          side="source"
+          width={sourcePanelWidth}
+          onWidthChange={(width) => updatePanelWidth('source', width)}
+          hidden={!sourcePanelOpen}
+        />
         <section
           className={`pane pane-preview${activeView === 'preview' ? ' pane-active' : ''}`}
           id="workbench-preview"
@@ -107,9 +209,29 @@ export function App(): JSX.Element {
           </header>
           <Preview />
         </section>
-        <div
-          className={`pane pane-side${activeView === 'inspector' || activeView === 'agent' || activeView === 'history' ? ' pane-active' : ''}${activeView === 'history' ? ' pane-history-active' : ''}`}
+        <PanelDivider
+          side="right"
+          width={rightPanelWidth}
+          onWidthChange={(width) => updatePanelWidth('right', width)}
+          hidden={!rightPanelOpen}
+        />
+        <aside
+          className={`pane pane-side${activeView === 'inspector' || activeView === 'agent' || activeView === 'history' ? ' pane-active' : ''}${activeView === 'history' ? ' pane-history-active' : ''}${rightPanelOpen ? '' : ' pane-collapsed'}`}
+          id="workbench-side"
+          aria-label="Right panel"
         >
+          <div className="side-panel-actions desktop-panel-control">
+            <span>Inspector and agent</span>
+            <button
+              className="panel-close-button"
+              type="button"
+              aria-label="Close right panel"
+              title="Close right panel"
+              onClick={() => setRightPanelOpen(false)}
+            >
+              ×
+            </button>
+          </div>
           <div
             className={`side-view side-inspector${activeView === 'inspector' ? ' side-view-active' : ''}`}
             id="workbench-inspector"
@@ -128,7 +250,29 @@ export function App(): JSX.Element {
           >
             <HistoryPanel />
           </div>
-        </div>
+        </aside>
+        {!sourcePanelOpen && (
+          <button
+            className="panel-open-button panel-open-source desktop-panel-control"
+            type="button"
+            aria-label="Open source panel"
+            title="Open source panel"
+            onClick={() => setSourcePanelOpen(true)}
+          >
+            Open source
+          </button>
+        )}
+        {!rightPanelOpen && (
+          <button
+            className="panel-open-button panel-open-right desktop-panel-control"
+            type="button"
+            aria-label="Open right panel"
+            title="Open right panel"
+            onClick={() => setRightPanelOpen(true)}
+          >
+            Open panel
+          </button>
+        )}
       </main>
     </div>
   );

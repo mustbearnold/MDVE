@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { reservedIdsIn, type Diagram } from '../mermaid/parse';
+import { setNodeLabel } from '../mermaid/mutate';
 import { useStore, type Selection } from '../state/store';
 import { Icon } from './Icon';
 
@@ -81,16 +82,24 @@ export function Preview(): JSX.Element {
   const selection = useStore((s) => s.selection);
   const diagram = useStore((s) => s.diagram);
   const select = useStore((s) => s.select);
+  const setSource = useStore((s) => s.setSource);
+  const session = useStore((s) => s.session);
   const renderError = useStore((s) => s.renderError);
   const setRenderError = useStore((s) => s.setRenderError);
   const reserved = useMemo(() => (renderError ? reservedIdsIn(source) : []), [renderError, source]);
   const knownNodeIds = useMemo(() => new Set(diagram.nodes.map((node) => node.id)), [diagram.nodes]);
 
+  const previewRef = useRef<HTMLDivElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   /** Pan is an offset from centred; the centring itself is computed below. */
   const [view, setView] = useState({ x: 0, y: 0, scale: 1 });
-  const dragRef = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null);
+  const dragRef = useRef<{ x: number; y: number; ox: number; oy: number; moved: boolean } | null>(null);
+  const draggedRef = useRef(false);
+  const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
+  const [inlineDraft, setInlineDraft] = useState('');
+  const [inlineEditorRect, setInlineEditorRect] = useState({ left: 0, top: 0, width: 0, height: 0 });
+  const editable = !session?.archived && !session?.trashed && !session?.agentLease;
   /** Intrinsic size of the last render. */
   const [content, setContent] = useState({ width: 0, height: 0 });
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
@@ -118,6 +127,39 @@ export function Preview(): JSX.Element {
     manualViewRef.current = true;
     setView((v) => ({ ...v, scale: Math.min(4, Math.max(0.05, v.scale * factor)) }));
   }, []);
+
+  const positionInlineEditor = useCallback((id: string) => {
+    const preview = previewRef.current;
+    const host = hostRef.current;
+    if (!preview || !host) return;
+    const node = Array.from(host.querySelectorAll('g.node')).find((element) => nodeIdOf(element) === id);
+    if (!node) return;
+    const nodeBox = node.getBoundingClientRect();
+    const previewBox = preview.getBoundingClientRect();
+    if (nodeBox.width <= 0 || nodeBox.height <= 0) return;
+    setInlineEditorRect({
+      left: nodeBox.left - previewBox.left,
+      top: nodeBox.top - previewBox.top,
+      width: Math.max(120, nodeBox.width),
+      height: Math.max(36, nodeBox.height),
+    });
+  }, []);
+
+  const beginInlineEdit = useCallback((id: string) => {
+    if (!editable) return;
+    const node = diagram.nodes.find((candidate) => candidate.id === id);
+    if (!node) return;
+    setInlineDraft(node.label);
+    setEditingNodeId(id);
+    requestAnimationFrame(() => positionInlineEditor(id));
+  }, [diagram.nodes, editable, positionInlineEditor]);
+
+  const finishInlineEdit = useCallback((commit: boolean) => {
+    if (!editingNodeId) return;
+    const id = editingNodeId;
+    setEditingNodeId(null);
+    if (commit) setSource(setNodeLabel(source, id, inlineDraft));
+  }, [editingNodeId, inlineDraft, setSource, source]);
 
   useEffect(() => {
     let cancelled = false;
@@ -161,6 +203,14 @@ export function Preview(): JSX.Element {
           nodeElement.setAttribute('role', 'button');
           nodeElement.setAttribute('tabindex', '0');
           nodeElement.setAttribute('aria-label', `Node: ${accessibleLabel}`);
+          nodeElement.addEventListener('dblclick', (event) => {
+            event.preventDefault();
+            beginInlineEdit(nodeId);
+          });
+          nodeElement.addEventListener('click', () => {
+            select({ kind: 'node', id: nodeId });
+            beginInlineEdit(nodeId);
+          });
         });
         // Rendered links are 1–2px wide, which is a miserable click target.
         // Shadow each one with a fat transparent path that takes the clicks.
@@ -194,7 +244,7 @@ export function Preview(): JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [source, diagram, knownNodeIds, setRenderError, fitToView]);
+  }, [beginInlineEdit, select, source, diagram, knownNodeIds, setRenderError, fitToView]);
 
   // Refit when the pane itself changes size.
   useEffect(() => {
@@ -230,12 +280,41 @@ export function Preview(): JSX.Element {
     }
   }, [selection, source, diagram, knownNodeIds]);
 
+  useEffect(() => {
+    if (!editingNodeId) return;
+    const reposition = () => positionInlineEditor(editingNodeId);
+    reposition();
+    window.addEventListener('resize', reposition);
+    return () => window.removeEventListener('resize', reposition);
+  }, [canvasSize, content, editingNodeId, positionInlineEditor, view]);
+
   const onClick = useCallback(
     (event: React.MouseEvent) => {
+      if (draggedRef.current) {
+        draggedRef.current = false;
+        return;
+      }
       const target = event.target as Element;
-      select(selectionForTarget(target, diagram, knownNodeIds) ?? { kind: 'none' });
+      const nextSelection = selectionForTarget(target, diagram, knownNodeIds) ?? { kind: 'none' };
+      if (nextSelection.kind === 'node' && editable) {
+        select(nextSelection);
+        beginInlineEdit(nextSelection.id);
+        return;
+      }
+      select(nextSelection);
     },
-    [diagram, knownNodeIds, select],
+    [beginInlineEdit, diagram, editable, knownNodeIds, select],
+  );
+
+  const onDoubleClick = useCallback(
+    (event: React.MouseEvent) => {
+      const target = event.target as Element;
+      const nextSelection = selectionForTarget(target, diagram, knownNodeIds);
+      if (nextSelection?.kind !== 'node') return;
+      event.preventDefault();
+      beginInlineEdit(nextSelection.id);
+    },
+    [beginInlineEdit, diagram, knownNodeIds],
   );
 
   const onWheel = useCallback(
@@ -254,25 +333,35 @@ export function Preview(): JSX.Element {
       const nextSelection = selectionForTarget(target, diagram, knownNodeIds);
       if (!nextSelection) return;
       event.preventDefault();
-      select(nextSelection);
+      if (nextSelection.kind === 'node' && event.key === 'Enter') {
+        beginInlineEdit(nextSelection.id);
+      } else {
+        select(nextSelection);
+      }
     },
-    [diagram, knownNodeIds, select],
+    [beginInlineEdit, diagram, knownNodeIds, select],
   );
 
   const onPointerDown = (event: React.PointerEvent) => {
-    if (event.button !== 0 || (event.target as Element).closest('g.node')) return;
-    dragRef.current = { x: event.clientX, y: event.clientY, ox: view.x, oy: view.y };
-    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    if (event.button !== 0) return;
+    dragRef.current = { x: event.clientX, y: event.clientY, ox: view.x, oy: view.y, moved: false };
   };
 
   const onPointerMove = (event: React.PointerEvent) => {
     const drag = dragRef.current;
     if (!drag) return;
+    if (Math.abs(event.clientX - drag.x) > 3 || Math.abs(event.clientY - drag.y) > 3) drag.moved = true;
     manualViewRef.current = true;
     setView((v) => ({ ...v, x: drag.ox + (event.clientX - drag.x), y: drag.oy + (event.clientY - drag.y) }));
   };
 
   const endDrag = () => {
+    if (dragRef.current?.moved) {
+      draggedRef.current = true;
+      window.setTimeout(() => {
+        draggedRef.current = false;
+      }, 0);
+    }
     dragRef.current = null;
   };
 
@@ -282,7 +371,7 @@ export function Preview(): JSX.Element {
   const stageTransform = `translate(${offsetX}px, ${offsetY}px) scale(${view.scale})`;
 
   return (
-    <div className="preview">
+    <div className="preview" ref={previewRef}>
       <div className="preview-tools" aria-label="Preview controls">
         <button className="icon-button" onClick={() => zoomBy(1.2)} title="Zoom in" aria-label="Zoom in">
           <Icon name="zoom-in" />
@@ -312,6 +401,7 @@ export function Preview(): JSX.Element {
         role="region"
         aria-label="Diagram preview"
         onClick={onClick}
+        onDoubleClick={onDoubleClick}
         onKeyDown={onKeyDown}
         onWheel={onWheel}
         onPointerDown={onPointerDown}
@@ -326,6 +416,33 @@ export function Preview(): JSX.Element {
           <div ref={hostRef} className="preview-svg" />
         </div>
       </div>
+
+      {editingNodeId && (
+        <input
+          className="preview-inline-editor"
+          aria-label="Edit node label"
+          value={inlineDraft}
+          style={{
+            left: inlineEditorRect.left,
+            top: inlineEditorRect.top,
+            width: inlineEditorRect.width,
+            height: inlineEditorRect.height,
+          }}
+          autoFocus
+          onChange={(event) => setInlineDraft(event.target.value)}
+          onBlur={() => finishInlineEdit(true)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              finishInlineEdit(true);
+            } else if (event.key === 'Escape') {
+              event.preventDefault();
+              finishInlineEdit(false);
+            }
+          }}
+          onPointerDown={(event) => event.stopPropagation()}
+        />
+      )}
 
       {renderError && (
         <div className="preview-error" role="alert" aria-live="assertive">
