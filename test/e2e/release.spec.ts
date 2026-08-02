@@ -286,6 +286,32 @@ test('preview supports pointer dragging and direct node label editing', async ({
   await expect(page.getByRole('button', { name: 'Node: Begin' })).toBeVisible();
 });
 
+test('preview keeps edge-label dragging separate from canvas panning', async ({ page }) => {
+  await page.getByRole('button', { name: 'Source', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Mermaid source' }).fill(
+    'flowchart TD\n  start[Start] --> decide{Decide}\n  decide -->|yes| build[Build]\n  decide -->|no| wait[Wait]\n',
+  );
+  await waitForSaved(page, 2);
+  await page.getByRole('button', { name: 'Preview', exact: true }).click();
+
+  const yesLabel = page.locator('g.edgeLabel').filter({ hasText: 'yes' });
+  await expect(yesLabel).toHaveCount(1);
+  await expect(yesLabel).toBeVisible();
+  const stage = page.locator('.preview-stage');
+  const beforeTransform = await stage.getAttribute('style');
+  const labelBoxBeforeDrag = await yesLabel.boundingBox();
+  expect(labelBoxBeforeDrag).toBeTruthy();
+  await page.mouse.move(labelBoxBeforeDrag!.x + labelBoxBeforeDrag!.width / 2, labelBoxBeforeDrag!.y + labelBoxBeforeDrag!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(labelBoxBeforeDrag!.x + labelBoxBeforeDrag!.width / 2 + 56, labelBoxBeforeDrag!.y + labelBoxBeforeDrag!.height / 2 + 22, { steps: 5 });
+  await page.mouse.up();
+  await expect.poll(() => stage.getAttribute('style')).toBe(beforeTransform);
+  const labelBoxAfterDrag = await yesLabel.boundingBox();
+  expect(labelBoxAfterDrag).toBeTruthy();
+  expect(labelBoxAfterDrag!.x - labelBoxBeforeDrag!.x).toBeGreaterThan(40);
+  expect(labelBoxAfterDrag!.y - labelBoxBeforeDrag!.y).toBeGreaterThan(10);
+});
+
 test('preview context menu can add a node', async ({ page }) => {
   await page.getByRole('button', { name: 'Source', exact: true }).click();
   await page.getByRole('textbox', { name: 'Mermaid source' }).fill('flowchart TD\n  start[Start] --> done[Done]\n');

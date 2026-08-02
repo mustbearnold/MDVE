@@ -52,7 +52,34 @@ function edgeEndsOf(el: Element, knownIds: Set<string>): { from: string; to: str
   }
   if (from && to) return { from, to };
 
+  const dataId = el.getAttribute('data-id');
+  const dataIdMatch = dataId && /^L_(.+)_\d+$/.exec(dataId);
+  if (dataIdMatch) {
+    const body = dataIdMatch[1];
+    for (let i = 1; i < body.length; i++) {
+      if (body[i] !== '_') continue;
+      const left = body.slice(0, i);
+      const right = body.slice(i + 1);
+      if (knownIds.has(left) && knownIds.has(right)) return { from: left, to: right };
+    }
+  }
+
   const m = /L_(.+)_\d+$/.exec(el.id);
+  if (!m) return null;
+  const body = m[1];
+  for (let i = 1; i < body.length; i++) {
+    if (body[i] !== '_') continue;
+    const left = body.slice(0, i);
+    const right = body.slice(i + 1);
+    if (knownIds.has(left) && knownIds.has(right)) return { from: left, to: right };
+  }
+  return null;
+}
+
+function edgeEndsOfLabel(el: Element, knownIds: Set<string>): { from: string; to: string } | null {
+  const labelId = el.querySelector('.label[data-id]')?.getAttribute('data-id');
+  if (!labelId) return null;
+  const m = /^L_(.+)_\d+$/.exec(labelId);
   if (!m) return null;
   const body = m[1];
   for (let i = 1; i < body.length; i++) {
@@ -75,6 +102,11 @@ function selectionForTarget(
     return id ? { kind: 'node', id } : null;
   }
 
+  const edgeLabel = target.closest('g.edgeLabel');
+  const labelEnds = edgeLabel && edgeEndsOfLabel(edgeLabel, knownNodeIds);
+  const labelEdge = labelEnds && diagram.edges.find((candidate) => candidate.from === labelEnds.from && candidate.to === labelEnds.to);
+  if (labelEdge) return { kind: 'edge', key: labelEdge.key };
+
   const edgeElement = target.closest('.edgePaths path, .flowchart-link');
   const ends = edgeElement && edgeEndsOf(edgeElement, knownNodeIds);
   const edge = ends && diagram.edges.find((candidate) => candidate.from === ends.from && candidate.to === ends.to);
@@ -86,7 +118,8 @@ type ContextMenuState = { left: number; top: number; selection: ContextMenuTarge
 type Point = { x: number; y: number };
 type DragState =
   | { kind: 'canvas'; x: number; y: number; ox: number; oy: number; moved: boolean }
-  | { kind: 'node'; id: string; x: number; y: number; ox: number; oy: number; moved: boolean };
+  | { kind: 'node'; id: string; x: number; y: number; ox: number; oy: number; moved: boolean }
+  | { kind: 'edge-label'; key: string; x: number; y: number; ox: number; oy: number; moved: boolean };
 
 function decodePoints(encoded: string | null): Point[] | null {
   if (!encoded) return null;
@@ -135,6 +168,7 @@ export function Preview(): JSX.Element {
   const dragCleanupRef = useRef<(() => void) | null>(null);
   const draggedRef = useRef(false);
   const nodeOffsetsRef = useRef(new Map<string, Point>());
+  const edgeLabelOffsetsRef = useRef(new Map<string, Point>());
   const renderedSourceRef = useRef<string | null>(null);
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [inlineDraft, setInlineDraft] = useState('');
@@ -206,6 +240,17 @@ export function Preview(): JSX.Element {
     node.setAttribute('transform', offset.x === 0 && offset.y === 0 ? baseTransform : `translate(${offset.x} ${offset.y}) ${baseTransform}`);
   }, []);
 
+  const applyEdgeLabelOffset = useCallback((key: string, offset: Point) => {
+    const host = hostRef.current;
+    if (!host) return;
+    host.querySelectorAll('g.edgeLabel').forEach((label) => {
+      if (label.getAttribute('data-mdve-edge-key') !== key) return;
+      const baseTransform = label.getAttribute('data-mdve-base-transform') ?? label.getAttribute('transform') ?? '';
+      label.setAttribute('data-mdve-base-transform', baseTransform);
+      label.setAttribute('transform', offset.x === 0 && offset.y === 0 ? baseTransform : `translate(${offset.x} ${offset.y}) ${baseTransform}`);
+    });
+  }, []);
+
   const applyEdgeOffsets = useCallback(() => {
     const host = hostRef.current;
     if (!host) return;
@@ -231,10 +276,11 @@ export function Preview(): JSX.Element {
     });
   }, [knownNodeIds]);
 
-  const applyNodeOffsets = useCallback(() => {
+  const applyTransientOffsets = useCallback(() => {
     nodeOffsetsRef.current.forEach((offset, id) => applyNodeOffset(id, offset));
+    edgeLabelOffsetsRef.current.forEach((offset, key) => applyEdgeLabelOffset(key, offset));
     applyEdgeOffsets();
-  }, [applyEdgeOffsets, applyNodeOffset]);
+  }, [applyEdgeLabelOffset, applyEdgeOffsets, applyNodeOffset]);
 
   const finishInlineEdit = useCallback((commit: boolean) => {
     if (!editingNodeId) return;
@@ -250,6 +296,7 @@ export function Preview(): JSX.Element {
     (async () => {
       if (renderedSourceRef.current !== source) {
         nodeOffsetsRef.current.clear();
+        edgeLabelOffsetsRef.current.clear();
         renderedSourceRef.current = source;
       }
       if (!source.trim()) {
@@ -299,6 +346,15 @@ export function Preview(): JSX.Element {
             beginInlineEdit(nodeId);
           });
         });
+        hostRef.current.querySelectorAll('g.edgeLabel').forEach((labelElement) => {
+          const ends = edgeEndsOfLabel(labelElement, knownNodeIds);
+          const edge = ends && diagram.edges.find((candidate) => candidate.from === ends.from && candidate.to === ends.to);
+          if (!edge?.label) return;
+          labelElement.setAttribute('data-mdve-edge-key', edge.key);
+          labelElement.setAttribute('role', 'button');
+          labelElement.setAttribute('tabindex', '0');
+          labelElement.setAttribute('aria-label', `Edge label: ${edge.label}`);
+        });
         // Rendered links are 1–2px wide, which is a miserable click target.
         // Shadow each one with a fat transparent path that takes the clicks.
         hostRef.current.querySelectorAll('.edgePaths path').forEach((path) => {
@@ -323,7 +379,7 @@ export function Preview(): JSX.Element {
           }
           path.parentElement?.insertBefore(hit, path);
         });
-        applyNodeOffsets();
+        applyTransientOffsets();
         if (!manualViewRef.current) fitToView();
         setRenderError(null);
       } catch (err) {
@@ -337,7 +393,7 @@ export function Preview(): JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [applyNodeOffsets, beginInlineEdit, select, source, diagram, knownNodeIds, setRenderError, fitToView]);
+  }, [applyTransientOffsets, beginInlineEdit, select, source, diagram, knownNodeIds, setRenderError, fitToView]);
 
   // Refit when the pane itself changes size.
   useEffect(() => {
@@ -519,9 +575,19 @@ export function Preview(): JSX.Element {
       applyEdgeOffsets();
       return;
     }
+    if (drag.kind === 'edge-label') {
+      const scale = Math.max(0.05, view.scale);
+      const offset = {
+        x: drag.ox + (clientX - drag.x) / scale,
+        y: drag.oy + (clientY - drag.y) / scale,
+      };
+      edgeLabelOffsetsRef.current.set(drag.key, offset);
+      applyEdgeLabelOffset(drag.key, offset);
+      return;
+    }
     manualViewRef.current = true;
     setView((v) => ({ ...v, x: drag.ox + (clientX - drag.x), y: drag.oy + (clientY - drag.y) }));
-  }, [applyEdgeOffsets, applyNodeOffset, view.scale]);
+  }, [applyEdgeLabelOffset, applyEdgeOffsets, applyNodeOffset, view.scale]);
 
   const endDrag = useCallback(() => {
     if (dragRef.current?.moved) {
@@ -541,6 +607,7 @@ export function Preview(): JSX.Element {
     const target = event.target as Element;
     const nextSelection = selectionForTarget(target, diagram, knownNodeIds);
     const isNodeDrag = nextSelection?.kind === 'node' && editable;
+    const isEdgeLabelDrag = nextSelection?.kind === 'edge' && editable && Boolean(target.closest('g.edgeLabel[data-mdve-edge-key]'));
     if (isNodeDrag) {
       const offset = nodeOffsetsRef.current.get(nextSelection.id) ?? { x: 0, y: 0 };
       select(nextSelection);
@@ -553,10 +620,22 @@ export function Preview(): JSX.Element {
         oy: offset.y,
         moved: false,
       };
+    } else if (isEdgeLabelDrag) {
+      const offset = edgeLabelOffsetsRef.current.get(nextSelection.key) ?? { x: 0, y: 0 };
+      select(nextSelection);
+      dragRef.current = {
+        kind: 'edge-label',
+        key: nextSelection.key,
+        x: event.clientX,
+        y: event.clientY,
+        ox: offset.x,
+        oy: offset.y,
+        moved: false,
+      };
     } else {
       dragRef.current = { kind: 'canvas', x: event.clientX, y: event.clientY, ox: view.x, oy: view.y, moved: false };
     }
-    if (!isNodeDrag) event.preventDefault();
+    if (!isNodeDrag && !isEdgeLabelDrag) event.preventDefault();
     const onWindowMove = (moveEvent: PointerEvent) => moveDrag(moveEvent.clientX, moveEvent.clientY);
     const onWindowEnd = () => endDrag();
     window.addEventListener('pointermove', onWindowMove);

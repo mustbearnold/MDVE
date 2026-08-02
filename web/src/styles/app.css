@@ -701,6 +701,7 @@ button.danger:hover:not(:disabled) {
 }
 
 .preview-svg g.node,
+.preview-svg g.edgeLabel[role='button'],
 .preview-svg path.mdve-hit {
   cursor: pointer;
 }
