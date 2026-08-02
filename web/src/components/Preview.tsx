@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
-import { reservedIdsIn, type Diagram } from '../mermaid/parse';
-import { setNodeLabel } from '../mermaid/mutate';
+import { addNode, deleteEdge, deleteNode, setNodeLabel } from '../mermaid/mutate';
+import { reservedIdsIn, supportsStructuredEditing, type Diagram } from '../mermaid/parse';
 import { useStore, type Selection } from '../state/store';
 import { Icon } from './Icon';
 
@@ -40,6 +40,10 @@ function nodeIdOf(el: Element): string | null {
  * split is resolved against the ids the parser knows about.
  */
 function edgeEndsOf(el: Element, knownIds: Set<string>): { from: string; to: string } | null {
+  const dataFrom = el.getAttribute('data-mdve-from');
+  const dataTo = el.getAttribute('data-mdve-to');
+  if (dataFrom && dataTo) return { from: dataFrom, to: dataTo };
+
   let from: string | undefined;
   let to: string | undefined;
   for (const cls of Array.from(el.classList)) {
@@ -77,6 +81,9 @@ function selectionForTarget(
   return edge ? { kind: 'edge', key: edge.key } : null;
 }
 
+type ContextMenuTarget = Exclude<Selection, { kind: 'none' }> | null;
+type ContextMenuState = { left: number; top: number; selection: ContextMenuTarget };
+
 export function Preview(): JSX.Element {
   const source = useStore((s) => s.source);
   const selection = useStore((s) => s.selection);
@@ -92,14 +99,18 @@ export function Preview(): JSX.Element {
   const previewRef = useRef<HTMLDivElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
   /** Pan is an offset from centred; the centring itself is computed below. */
   const [view, setView] = useState({ x: 0, y: 0, scale: 1 });
   const dragRef = useRef<{ x: number; y: number; ox: number; oy: number; moved: boolean } | null>(null);
+  const dragCleanupRef = useRef<(() => void) | null>(null);
   const draggedRef = useRef(false);
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [inlineDraft, setInlineDraft] = useState('');
   const [inlineEditorRect, setInlineEditorRect] = useState({ left: 0, top: 0, width: 0, height: 0 });
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const editable = !session?.archived && !session?.trashed && !session?.agentLease;
+  const structuredEditingAvailable = editable && supportsStructuredEditing(diagram, renderError);
   /** Intrinsic size of the last render. */
   const [content, setContent] = useState({ width: 0, height: 0 });
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
@@ -216,15 +227,20 @@ export function Preview(): JSX.Element {
         // Shadow each one with a fat transparent path that takes the clicks.
         hostRef.current.querySelectorAll('.edgePaths path').forEach((path) => {
           const hit = path.cloneNode() as SVGPathElement;
-          hit.setAttribute('class', 'mdve-hit');
+          const endpointClasses = Array.from(path.classList).filter((name) => name.startsWith('LS-') || name.startsWith('LE-'));
+          hit.setAttribute('class', ['mdve-hit', ...endpointClasses].join(' '));
           hit.setAttribute('stroke', 'transparent');
           hit.setAttribute('stroke-width', '14');
+          hit.setAttribute('pointer-events', 'stroke');
           hit.setAttribute('fill', 'none');
           hit.removeAttribute('marker-end');
           hit.removeAttribute('style');
+          path.setAttribute('pointer-events', 'none');
           hit.id = `hit-${path.id}`;
           const ends = edgeEndsOf(path, knownNodeIds);
           if (ends) {
+            hit.setAttribute('data-mdve-from', ends.from);
+            hit.setAttribute('data-mdve-to', ends.to);
             hit.setAttribute('role', 'button');
             hit.setAttribute('tabindex', '0');
             hit.setAttribute('aria-label', `Link: ${ends.from} to ${ends.to}`);
@@ -288,6 +304,22 @@ export function Preview(): JSX.Element {
     return () => window.removeEventListener('resize', reposition);
   }, [canvasSize, content, editingNodeId, positionInlineEditor, view]);
 
+  useEffect(() => {
+    if (!contextMenu) return;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (!contextMenuRef.current?.contains(event.target as Node)) setContextMenu(null);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setContextMenu(null);
+    };
+    window.addEventListener('pointerdown', closeOnOutsidePointer);
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      window.removeEventListener('pointerdown', closeOnOutsidePointer);
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [contextMenu]);
+
   const onClick = useCallback(
     (event: React.MouseEvent) => {
       if (draggedRef.current) {
@@ -317,6 +349,59 @@ export function Preview(): JSX.Element {
     [beginInlineEdit, diagram, knownNodeIds],
   );
 
+  const onContextMenu = useCallback((event: React.MouseEvent) => {
+    event.preventDefault();
+    const preview = previewRef.current;
+    if (!preview) return;
+    const box = preview.getBoundingClientRect();
+    const nextSelection = selectionForTarget(event.target as Element, diagram, knownNodeIds);
+    select(nextSelection ?? { kind: 'none' });
+    const padding = 8;
+    const maxLeft = Math.max(padding, box.width - 196);
+    const maxTop = Math.max(padding, box.height - 180);
+    setContextMenu({
+      left: Math.min(maxLeft, Math.max(padding, event.clientX - box.left)),
+      top: Math.min(maxTop, Math.max(padding, event.clientY - box.top)),
+      selection: nextSelection,
+    });
+  }, [diagram, knownNodeIds, select]);
+
+  const addNodeFromContextMenu = useCallback(() => {
+    if (!structuredEditingAvailable) return;
+    const result = addNode(source);
+    if (!result.id || result.source === source) return;
+    setSource(result.source);
+    select({ kind: 'node', id: result.id });
+    setContextMenu(null);
+  }, [select, setSource, source, structuredEditingAvailable]);
+
+  const editNodeFromContextMenu = useCallback(() => {
+    const target = contextMenu?.selection;
+    if (!target || target.kind !== 'node') return;
+    setContextMenu(null);
+    beginInlineEdit(target.id);
+  }, [beginInlineEdit, contextMenu?.selection]);
+
+  const deleteNodeFromContextMenu = useCallback(() => {
+    const target = contextMenu?.selection;
+    if (!structuredEditingAvailable || !target || target.kind !== 'node') return;
+    const nextSource = deleteNode(source, target.id);
+    if (nextSource === source) return;
+    setSource(nextSource);
+    select({ kind: 'none' });
+    setContextMenu(null);
+  }, [contextMenu?.selection, select, setSource, source, structuredEditingAvailable]);
+
+  const deleteEdgeFromContextMenu = useCallback(() => {
+    const target = contextMenu?.selection;
+    if (!structuredEditingAvailable || !target || target.kind !== 'edge') return;
+    const nextSource = deleteEdge(source, target.key);
+    if (nextSource === source) return;
+    setSource(nextSource);
+    select({ kind: 'none' });
+    setContextMenu(null);
+  }, [contextMenu?.selection, select, setSource, source, structuredEditingAvailable]);
+
   const onWheel = useCallback(
     (event: React.WheelEvent) => {
       if (!event.ctrlKey && !event.metaKey && Math.abs(event.deltaY) < 2) return;
@@ -342,20 +427,15 @@ export function Preview(): JSX.Element {
     [beginInlineEdit, diagram, knownNodeIds, select],
   );
 
-  const onPointerDown = (event: React.PointerEvent) => {
-    if (event.button !== 0) return;
-    dragRef.current = { x: event.clientX, y: event.clientY, ox: view.x, oy: view.y, moved: false };
-  };
-
-  const onPointerMove = (event: React.PointerEvent) => {
+  const moveDrag = useCallback((clientX: number, clientY: number) => {
     const drag = dragRef.current;
     if (!drag) return;
-    if (Math.abs(event.clientX - drag.x) > 3 || Math.abs(event.clientY - drag.y) > 3) drag.moved = true;
+    if (Math.abs(clientX - drag.x) > 3 || Math.abs(clientY - drag.y) > 3) drag.moved = true;
     manualViewRef.current = true;
-    setView((v) => ({ ...v, x: drag.ox + (event.clientX - drag.x), y: drag.oy + (event.clientY - drag.y) }));
-  };
+    setView((v) => ({ ...v, x: drag.ox + (clientX - drag.x), y: drag.oy + (clientY - drag.y) }));
+  }, []);
 
-  const endDrag = () => {
+  const endDrag = useCallback(() => {
     if (dragRef.current?.moved) {
       draggedRef.current = true;
       window.setTimeout(() => {
@@ -363,7 +443,25 @@ export function Preview(): JSX.Element {
       }, 0);
     }
     dragRef.current = null;
-  };
+    dragCleanupRef.current?.();
+    dragCleanupRef.current = null;
+  }, []);
+
+  const onPointerDown = useCallback((event: React.PointerEvent) => {
+    if (event.button !== 0) return;
+    dragCleanupRef.current?.();
+    dragRef.current = { x: event.clientX, y: event.clientY, ox: view.x, oy: view.y, moved: false };
+    const onWindowMove = (moveEvent: PointerEvent) => moveDrag(moveEvent.clientX, moveEvent.clientY);
+    const onWindowEnd = () => endDrag();
+    window.addEventListener('pointermove', onWindowMove);
+    window.addEventListener('pointerup', onWindowEnd);
+    window.addEventListener('pointercancel', onWindowEnd);
+    dragCleanupRef.current = () => {
+      window.removeEventListener('pointermove', onWindowMove);
+      window.removeEventListener('pointerup', onWindowEnd);
+      window.removeEventListener('pointercancel', onWindowEnd);
+    };
+  }, [endDrag, moveDrag, view.x, view.y]);
 
   // Centre the scaled diagram in the pane, then apply the user's pan.
   const offsetX = (canvasSize.width - content.width * view.scale) / 2 + view.x;
@@ -402,10 +500,10 @@ export function Preview(): JSX.Element {
         aria-label="Diagram preview"
         onClick={onClick}
         onDoubleClick={onDoubleClick}
+        onContextMenu={onContextMenu}
         onKeyDown={onKeyDown}
         onWheel={onWheel}
         onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
       >
@@ -416,6 +514,57 @@ export function Preview(): JSX.Element {
           <div ref={hostRef} className="preview-svg" />
         </div>
       </div>
+
+      {contextMenu && (
+        <div
+          ref={contextMenuRef}
+          className="preview-context-menu"
+          role="menu"
+          aria-label="Preview context menu"
+          style={{ left: contextMenu.left, top: contextMenu.top }}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              setContextMenu(null);
+            }
+          }}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            autoFocus
+            disabled={!structuredEditingAvailable}
+            onClick={addNodeFromContextMenu}
+          >
+            Add node
+          </button>
+          {contextMenu.selection?.kind === 'node' && (
+            <>
+              <button type="button" role="menuitem" disabled={!editable} onClick={editNodeFromContextMenu}>
+                Edit label
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                disabled={!structuredEditingAvailable || deleteNode(source, contextMenu.selection.id) === source}
+                onClick={deleteNodeFromContextMenu}
+              >
+                Delete node
+              </button>
+            </>
+          )}
+          {contextMenu.selection?.kind === 'edge' && (
+            <button
+              type="button"
+              role="menuitem"
+              disabled={!structuredEditingAvailable || deleteEdge(source, contextMenu.selection.key) === source}
+              onClick={deleteEdgeFromContextMenu}
+            >
+              Delete link
+            </button>
+          )}
+        </div>
+      )}
 
       {editingNodeId && (
         <input

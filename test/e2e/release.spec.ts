@@ -281,6 +281,79 @@ test('preview supports pointer dragging and direct node label editing', async ({
   await expect(page.getByRole('button', { name: 'Node: Begin' })).toBeVisible();
 });
 
+test('preview context menu can add a node', async ({ page }) => {
+  await page.getByRole('button', { name: 'Source', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Mermaid source' }).fill('flowchart TD\n  start[Start] --> done[Done]\n');
+  await waitForSaved(page, 2);
+  await page.getByRole('button', { name: 'Preview', exact: true }).click();
+
+  const canvas = page.getByRole('region', { name: 'Diagram preview' });
+  await canvas.click({ button: 'right', position: { x: 96, y: 96 } });
+  const menu = page.getByRole('menu', { name: 'Preview context menu' });
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole('menuitem', { name: 'Add node' })).toBeVisible();
+  const accessibility = await new AxeBuilder({ page }).analyze();
+  expect(accessibility.violations, 'preview context menu accessibility violations').toEqual([]);
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
+
+  await canvas.click({ button: 'right', position: { x: 96, y: 96 } });
+  await expect(menu).toBeVisible();
+  await menu.getByRole('menuitem', { name: 'Add node' }).click();
+
+  await waitForSaved(page, 3);
+  await expect(page.getByRole('button', { name: 'Node: New node' })).toBeVisible();
+  await expect(menu).toBeHidden();
+});
+
+test('preview context menu edits and deletes a node', async ({ page }) => {
+  await page.getByRole('button', { name: 'Source', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Mermaid source' }).fill('flowchart TD\n  start[Start] --> done[Done]\n');
+  await waitForSaved(page, 2);
+  await page.getByRole('button', { name: 'Preview', exact: true }).click();
+
+  const node = page.getByRole('button', { name: 'Node: Start' });
+  await node.click({ button: 'right' });
+  const menu = page.getByRole('menu', { name: 'Preview context menu' });
+  await expect(menu.getByRole('menuitem', { name: 'Edit label' })).toBeVisible();
+  await expect(menu.getByRole('menuitem', { name: 'Delete node' })).toBeVisible();
+  await menu.getByRole('menuitem', { name: 'Edit label' }).click();
+
+  const editor = page.getByRole('textbox', { name: 'Edit node label' });
+  await expect(editor).toBeVisible();
+  await editor.fill('Begin');
+  await editor.press('Enter');
+  await waitForSaved(page, 3);
+  const renamedNode = page.getByRole('button', { name: 'Node: Begin' });
+  await expect(renamedNode).toBeVisible();
+
+  await renamedNode.click({ button: 'right' });
+  await menu.getByRole('menuitem', { name: 'Delete node' }).click();
+  await waitForSaved(page, 4);
+  await expect(page.getByRole('button', { name: 'Node: Begin' })).toBeHidden();
+});
+
+test('preview context menu can delete a link', async ({ page }) => {
+  await page.getByRole('button', { name: 'Source', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Mermaid source' }).fill('flowchart TD\n  start[Start] --> done[Done]\n');
+  await waitForSaved(page, 2);
+  await page.getByRole('button', { name: 'Preview', exact: true }).click();
+
+  const link = page.locator('path.mdve-hit[aria-label="Link: start to done"]');
+  await expect(link).toHaveCount(1);
+  const linkBox = await link.boundingBox();
+  expect(linkBox).toBeTruthy();
+  await page.mouse.click(linkBox!.x + linkBox!.width / 2, linkBox!.y + linkBox!.height / 2, { button: 'right' });
+  const menu = page.getByRole('menu', { name: 'Preview context menu' });
+  await expect(menu.getByRole('menuitem', { name: 'Delete link' })).toBeVisible();
+  await menu.getByRole('menuitem', { name: 'Delete link' }).click();
+
+  await waitForSaved(page, 3);
+  await expect(page.locator('.edgePaths path:not(.mdve-hit)')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Node: Start' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Node: Done' })).toBeVisible();
+});
+
 test('desktop panels can be collapsed and their dividers resized', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const sourcePanel = page.locator('#workbench-source');

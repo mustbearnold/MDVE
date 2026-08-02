@@ -667,12 +667,32 @@ button.danger:hover:not(:disabled) {
   transform: translate(-1px, -1px);
 }
 
+.preview-context-menu {
+  position: absolute;
+  z-index: var(--z-menu);
+  display: grid;
+  gap: 2px;
+  min-width: 180px;
+  padding: var(--space-1);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.preview-context-menu button {
+  justify-content: flex-start;
+  width: 100%;
+  background: transparent;
+  border-color: transparent;
+  text-align: left;
+}
+
 .preview-stage {
   position: absolute;
   top: 0;
   left: 0;
   transform-origin: 0 0;
-  transition: transform 80ms linear;
 }
 
 .preview-svg svg {

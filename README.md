@@ -52,7 +52,9 @@ npm start
 On a desktop layout, drag the Preview canvas to pan, click a rendered node to
 edit its label inline, use the close/open controls to hide or restore the
 Source and right panels, and drag either vertical divider to resize the
-workbench. The divider also supports keyboard arrow resizing when focused.
+workbench. Right-click blank preview space to add a node, or right-click a node
+or link for its contextual edit/delete actions. The divider also supports
+keyboard arrow resizing when focused.
 
 ## The workbench
 
