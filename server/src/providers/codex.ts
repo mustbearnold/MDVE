@@ -11,11 +11,12 @@ import { createInterface, type Interface } from 'node:readline';
 import { promisify } from 'node:util';
 
 import type { AgentEvent, ModelCatalog, ModelInfo, Provider, RunOptions } from './types.js';
+import { PACKAGE_VERSION } from '../version.js';
 
 const execFileAsync = promisify(execFile);
 const CODEX_BIN = process.env.MDVE_CODEX_BIN ?? 'codex';
 export const CODEX_COMPATIBILITY_RANGE = '>=0.146.0 <0.147.0';
-const CLIENT_VERSION = process.env.MDVE_VERSION ?? '1.0.0';
+const CLIENT_VERSION = process.env.MDVE_VERSION ?? PACKAGE_VERSION;
 
 interface JsonRpcResponse {
   id?: string | number;

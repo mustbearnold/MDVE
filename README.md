@@ -98,14 +98,13 @@ reversible and does not delete source, history, or Conversations.
 
 The development-only `PORT` and `HOST` aliases are also accepted by the server.
 
-## Release status
+## Development status
 
-The repository contains the V1 candidate packaging, release gates, and local
-verification harness. Exact-head GitHub CI and CodeQL checks are part of the
-candidate record. Public publication remains gated on the documented manual
-WCAG review, registry trusted-publishing/integrity evidence, qualified legal
-approval, and any remaining release-owner evidence for one immutable candidate.
-No public registry publication is implied by this repository state.
+The current development baseline is version `1.0.0`. Work continues
+iteratively on `master`; this repository state is not an official npm or
+GitHub publication. The release-gate harness remains available for a future
+public distribution, but publication-only owner, legal, registry, and
+trusted-publishing gates do not block normal development.
 
 ## Scope
 

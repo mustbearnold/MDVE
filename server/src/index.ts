@@ -13,6 +13,7 @@ import express from 'express';
 
 import { CodexProvider } from './providers/codex.js';
 import type { AgentEvent, Provider } from './providers/types.js';
+import { PACKAGE_VERSION } from './version.js';
 import {
   DEFAULT_DIAGRAM,
   AgentLeaseError,
@@ -58,7 +59,7 @@ const WEB_DIST = resolve(
   process.env.MDVE_WEB_DIST ??
     (existsSync(resolve(__dirname, '../web')) ? resolve(__dirname, '../web') : resolve(__dirname, '../../web/dist')),
 );
-const VERSION = process.env.MDVE_VERSION ?? '0.1.0-dev';
+const VERSION = process.env.MDVE_VERSION ?? PACKAGE_VERSION;
 const AUTH_REQUIRED = process.env.MDVE_AUTH_REQUIRED === '1';
 const AUTH_HOST = `${HOST}:${PORT}`;
 let bootstrapToken = process.env.MDVE_BOOTSTRAP_TOKEN ?? null;

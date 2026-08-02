@@ -45,7 +45,9 @@ test('authenticated API preserves revision, history, conversation, and archive c
   try {
     const ready = await fetch(`${base}/_mdve/ready`);
     assert.equal(ready.status, 200);
-    assert.equal((await ready.json()).ok, true);
+    const readiness = await ready.json() as { ok: boolean; version: string };
+    assert.equal(readiness.ok, true);
+    assert.equal(readiness.version, '1.0.0');
 
     const unauthorized = await fetch(`${base}/api/sessions`);
     assert.equal(unauthorized.status, 401);
