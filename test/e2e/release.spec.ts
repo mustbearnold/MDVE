@@ -189,7 +189,7 @@ test('intermediate desktop toolbar reflows before controls collide', async ({ pa
   expect(geometry.statusBottom).toBeLessThanOrEqual(geometry.nodeTop + 1);
 });
 
-test('desktop side chrome keeps optional agent controls tucked away', async ({ page }) => {
+test('desktop context dock keeps one focused context visible', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const geometry = await page.evaluate(() => {
     const inspector = document.querySelector('.side-inspector')?.getBoundingClientRect();
@@ -208,16 +208,66 @@ test('desktop side chrome keeps optional agent controls tucked away', async ({ p
   });
 
   expect(geometry.documentOverflow).toBeLessThanOrEqual(1);
-  expect(geometry.agentHeight).toBeGreaterThan(geometry.inspectorHeight);
-  expect(geometry.chatLogHeight).toBeGreaterThan(100);
-  expect(geometry.chatLogScrollHeight).toBeLessThanOrEqual(geometry.chatLogHeight + 1);
-  expect(geometry.settingsOpen).toBe(false);
-  expect(geometry.examplesOpen).toBe(false);
+  expect(geometry.inspectorHeight).toBeGreaterThan(400);
+  expect(geometry.agentHeight).toBe(0);
+
+  await page.locator('.activity-rail').getByRole('button', { name: 'Agent', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Agent', exact: true })).toBeVisible();
+  await expect.poll(async () => (await page.locator('.side-agent').boundingBox())?.height ?? 0).toBeGreaterThan(400);
+  const agentGeometry = await page.evaluate(() => {
+    const inspector = document.querySelector('.side-inspector')?.getBoundingClientRect();
+    const agent = document.querySelector('.side-agent')?.getBoundingClientRect();
+    const chatLog = document.querySelector('.chat-log');
+    if (!inspector || !agent || !chatLog) throw new Error('Focused desktop side-panel geometry is incomplete');
+    return {
+      inspectorHeight: inspector.height,
+      agentHeight: agent.height,
+      chatLogHeight: chatLog.getBoundingClientRect().height,
+      chatLogScrollHeight: chatLog.scrollHeight,
+      settingsOpen: document.querySelector('.chat-settings')?.hasAttribute('open'),
+      examplesOpen: document.querySelector('.chat-examples')?.hasAttribute('open'),
+    };
+  });
+
+  expect(agentGeometry.inspectorHeight).toBe(0);
+  expect(agentGeometry.agentHeight).toBeGreaterThan(agentGeometry.inspectorHeight);
+  expect(agentGeometry.chatLogHeight).toBeGreaterThan(100);
+  expect(agentGeometry.chatLogScrollHeight).toBeLessThanOrEqual(agentGeometry.chatLogHeight + 1);
+  expect(agentGeometry.settingsOpen).toBe(false);
+  expect(agentGeometry.examplesOpen).toBe(false);
 
   await page.locator('.chat-settings summary').click();
   await expect(page.getByLabel('Provider')).toBeVisible();
   await page.locator('.chat-settings summary').click();
   await expect(page.getByLabel('Provider')).toBeHidden();
+});
+
+test('v2 canvas shell exposes activity navigation, command palette, and agent tray', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(page.getByRole('navigation', { name: 'Workbench activity' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Ask MDVE to change this diagram' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Open command palette' }).click();
+  const palette = page.getByRole('dialog', { name: 'What do you want to open?' });
+  await expect(palette).toBeVisible();
+  await expect(page.getByRole('searchbox', { name: 'Search commands' })).toBeFocused();
+  const paletteAccessibility = await new AxeBuilder({ page }).analyze();
+  expect(paletteAccessibility.violations, 'command palette accessibility violations').toEqual([]);
+  await palette.getByRole('button', { name: 'Open agent' }).click();
+  await expect(palette).toBeHidden();
+  await expect(page.getByRole('textbox', { name: 'Change request' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Open command palette' }).click();
+  await page.getByRole('searchbox', { name: 'Search commands' }).fill('history');
+  await expect(page.getByRole('button', { name: 'Open history' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open source' })).toBeHidden();
+  await page.getByRole('button', { name: 'Open history' }).click();
+  await expect(page.locator('#workbench-history').getByRole('heading', { name: 'History', exact: true })).toBeVisible();
+
+  await page.keyboard.press('Control+k');
+  await expect(palette).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(palette).toBeHidden();
 });
 
 test('large text, forced colors, and reduced motion preserve the critical workflow', async ({ page }) => {

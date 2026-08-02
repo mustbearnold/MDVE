@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { subscribeDiagram } from './api';
+import { ActivityRail } from './components/ActivityRail';
 import { ChatPanel } from './components/ChatPanel';
+import { ChangeTray } from './components/ChangeTray';
 import { CodePane } from './components/CodePane';
+import { CommandPalette } from './components/CommandPalette';
+import { ContextTabs } from './components/ContextTabs';
 import { Inspector } from './components/Inspector';
 import { HistoryPanel } from './components/HistoryPanel';
 import { Preview } from './components/Preview';
@@ -75,6 +79,7 @@ function PanelDivider({
 
 export function App(): JSX.Element {
   const session = useStore((s) => s.session);
+  const busy = useStore((s) => s.busy);
   const loadSession = useStore((s) => s.loadSession);
   const loadProviders = useStore((s) => s.loadProviders);
   const [activeView, setActiveView] = useState<WorkbenchView>('preview');
@@ -82,7 +87,23 @@ export function App(): JSX.Element {
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
   const [sourcePanelWidth, setSourcePanelWidth] = useState(320);
   const [rightPanelWidth, setRightPanelWidth] = useState(340);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const layoutRef = useRef<HTMLElement>(null);
+
+  const selectView = useCallback((view: WorkbenchView) => {
+    setActiveView(view);
+    if (view === 'source') setSourcePanelOpen(true);
+    if (view === 'inspector' || view === 'agent' || view === 'history') setRightPanelOpen(true);
+  }, []);
+
+  const focusLibrary = useCallback(() => {
+    document.querySelector<HTMLSelectElement>('#diagram-select')?.focus();
+  }, []);
+
+  const openAgent = useCallback(() => {
+    selectView('agent');
+    requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('#agent-prompt')?.focus());
+  }, [selectView]);
 
   const updatePanelWidth = useCallback((side: 'source' | 'right', requested: number) => {
     const layoutWidth = layoutRef.current?.getBoundingClientRect().width ?? window.innerWidth;
@@ -135,6 +156,19 @@ export function App(): JSX.Element {
     };
   }, []);
 
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setCommandPaletteOpen((open) => !open);
+      } else if (event.key === 'Escape') {
+        setCommandPaletteOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   // Global undo/redo.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -157,123 +191,150 @@ export function App(): JSX.Element {
     return <div className="boot">Starting MDVE…</div>;
   }
 
+  const contextView: Extract<WorkbenchView, 'inspector' | 'agent' | 'history'> = activeView === 'agent'
+    ? 'agent'
+    : activeView === 'history'
+      ? 'history'
+      : 'inspector';
+
   return (
     <div className="app">
       <a className="skip-link" href="#workbench-main">
         Skip to workbench
       </a>
       <Toolbar />
-      <WorkbenchTabs activeView={activeView} onChange={setActiveView} />
-      <main
-        className="layout"
-        id="workbench-main"
-        ref={layoutRef}
-        style={{
-          gridTemplateColumns: `${sourcePanelOpen ? `${sourcePanelWidth}px 10px` : '0px 0px'} minmax(0, 1fr) ${rightPanelOpen ? `10px ${rightPanelWidth}px` : '0px 0px'}`,
-        }}
-      >
-        <section
-          className={`pane pane-code${activeView === 'source' ? ' pane-active' : ''}${sourcePanelOpen ? '' : ' pane-collapsed'}`}
-          id="workbench-source"
-          aria-labelledby="source-heading"
-        >
-          <header className="pane-header">
-            <h2 id="source-heading">Source</h2>
-            <span>Mermaid</span>
-            <button
-              className="panel-close-button desktop-panel-control"
-              type="button"
-              aria-label="Close source panel"
-              title="Close source panel"
-              onClick={() => setSourcePanelOpen(false)}
-            >
-              ×
-            </button>
-          </header>
-          <CodePane />
-        </section>
-        <PanelDivider
-          side="source"
-          width={sourcePanelWidth}
-          onWidthChange={(width) => updatePanelWidth('source', width)}
-          hidden={!sourcePanelOpen}
+      <div className="workbench-shell">
+        <ActivityRail
+          activeView={activeView}
+          onSelect={selectView}
+          onLibrary={focusLibrary}
+          onCommand={() => setCommandPaletteOpen(true)}
         />
-        <section
-          className={`pane pane-preview${activeView === 'preview' ? ' pane-active' : ''}`}
-          id="workbench-preview"
-          aria-labelledby="preview-heading"
-        >
-          <header className="pane-header">
-            <h2 id="preview-heading">Preview</h2>
-            <span>Select a node or link to inspect it</span>
-          </header>
-          <Preview />
-        </section>
-        <PanelDivider
-          side="right"
-          width={rightPanelWidth}
-          onWidthChange={(width) => updatePanelWidth('right', width)}
-          hidden={!rightPanelOpen}
-        />
-        <aside
-          className={`pane pane-side${activeView === 'inspector' || activeView === 'agent' || activeView === 'history' ? ' pane-active' : ''}${activeView === 'history' ? ' pane-history-active' : ''}${rightPanelOpen ? '' : ' pane-collapsed'}`}
-          id="workbench-side"
-          aria-label="Right panel"
-        >
-          <div className="side-panel-actions desktop-panel-control">
-            <span>Inspector and agent</span>
-            <button
-              className="panel-close-button"
-              type="button"
-              aria-label="Close right panel"
-              title="Close right panel"
-              onClick={() => setRightPanelOpen(false)}
+        <div className="workbench-stage">
+          <WorkbenchTabs activeView={activeView} onChange={selectView} />
+          <main
+            className="layout"
+            id="workbench-main"
+            ref={layoutRef}
+            style={{
+              gridTemplateColumns: `${sourcePanelOpen ? `${sourcePanelWidth}px 10px` : '0px 0px'} minmax(0, 1fr) ${rightPanelOpen ? `10px ${rightPanelWidth}px` : '0px 0px'}`,
+            }}
+          >
+            <section
+              className={`pane pane-code${activeView === 'source' ? ' pane-active' : ''}${sourcePanelOpen ? '' : ' pane-collapsed'}`}
+              id="workbench-source"
+              aria-labelledby="source-heading"
             >
-              ×
-            </button>
-          </div>
-          <div
-            className={`side-view side-inspector${activeView === 'inspector' ? ' side-view-active' : ''}`}
-            id="workbench-inspector"
-          >
-            <Inspector />
-          </div>
-          <div
-            className={`side-view side-agent${activeView === 'agent' ? ' side-view-active' : ''}`}
-            id="workbench-agent"
-          >
-            <ChatPanel />
-          </div>
-          <div
-            className={`side-view side-history${activeView === 'history' ? ' side-view-active' : ''}`}
-            id="workbench-history"
-          >
-            <HistoryPanel />
-          </div>
-        </aside>
-        {!sourcePanelOpen && (
-          <button
-            className="panel-open-button panel-open-source desktop-panel-control"
-            type="button"
-            aria-label="Open source panel"
-            title="Open source panel"
-            onClick={() => setSourcePanelOpen(true)}
-          >
-            Open source
-          </button>
-        )}
-        {!rightPanelOpen && (
-          <button
-            className="panel-open-button panel-open-right desktop-panel-control"
-            type="button"
-            aria-label="Open right panel"
-            title="Open right panel"
-            onClick={() => setRightPanelOpen(true)}
-          >
-            Open panel
-          </button>
-        )}
-      </main>
+              <header className="pane-header">
+                <h2 id="source-heading">Source</h2>
+                <span>Mermaid</span>
+                <button
+                  className="panel-close-button desktop-panel-control"
+                  type="button"
+                  aria-label="Close source panel"
+                  title="Close source panel"
+                  onClick={() => setSourcePanelOpen(false)}
+                >
+                  ×
+                </button>
+              </header>
+              <CodePane />
+            </section>
+            <PanelDivider
+              side="source"
+              width={sourcePanelWidth}
+              onWidthChange={(width) => updatePanelWidth('source', width)}
+              hidden={!sourcePanelOpen}
+            />
+            <section
+              className={`pane pane-preview${activeView === 'preview' ? ' pane-active' : ''}`}
+              id="workbench-preview"
+              aria-labelledby="preview-heading"
+            >
+              <header className="pane-header">
+                <h2 id="preview-heading">Preview</h2>
+                <span>Select a node or link to inspect it</span>
+              </header>
+              <Preview />
+            </section>
+            <PanelDivider
+              side="right"
+              width={rightPanelWidth}
+              onWidthChange={(width) => updatePanelWidth('right', width)}
+              hidden={!rightPanelOpen}
+            />
+            <aside
+              className={`pane pane-side${activeView === 'inspector' || activeView === 'agent' || activeView === 'history' ? ' pane-active' : ''}${activeView === 'history' ? ' pane-history-active' : ''}${rightPanelOpen ? '' : ' pane-collapsed'}`}
+              id="workbench-side"
+              aria-label="Right panel"
+            >
+              <div className="side-panel-actions desktop-panel-control">
+                <div className="side-panel-title">
+                  <span>Context</span>
+                  <strong>{contextView === 'inspector' ? 'Inspect' : contextView === 'agent' ? 'Agent' : 'History'}</strong>
+                </div>
+                <ContextTabs activeView={contextView} onChange={selectView} />
+                <button
+                  className="panel-close-button"
+                  type="button"
+                  aria-label="Close right panel"
+                  title="Close right panel"
+                  onClick={() => setRightPanelOpen(false)}
+                >
+                  ×
+                </button>
+              </div>
+              <div
+                className={`side-view side-inspector${contextView === 'inspector' ? ' side-view-active' : ''}`}
+                id="workbench-inspector"
+              >
+                <Inspector />
+              </div>
+              <div
+                className={`side-view side-agent${contextView === 'agent' ? ' side-view-active' : ''}`}
+                id="workbench-agent"
+              >
+                <ChatPanel />
+              </div>
+              <div
+                className={`side-view side-history${contextView === 'history' ? ' side-view-active' : ''}`}
+                id="workbench-history"
+              >
+                <HistoryPanel />
+              </div>
+            </aside>
+            {!sourcePanelOpen && (
+              <button
+                className="panel-open-button panel-open-source desktop-panel-control"
+                type="button"
+                aria-label="Open source panel"
+                title="Open source panel"
+                onClick={() => setSourcePanelOpen(true)}
+              >
+                Open source
+              </button>
+            )}
+            {!rightPanelOpen && (
+              <button
+                className="panel-open-button panel-open-right desktop-panel-control"
+                type="button"
+                aria-label="Open right panel"
+                title="Open right panel"
+                onClick={() => setRightPanelOpen(true)}
+              >
+                Open panel
+              </button>
+            )}
+          </main>
+          <ChangeTray busy={busy} onOpenAgent={openAgent} />
+        </div>
+      </div>
+      <CommandPalette
+        open={commandPaletteOpen}
+        onClose={() => setCommandPaletteOpen(false)}
+        onOpenView={selectView}
+        onLibrary={focusLibrary}
+      />
     </div>
   );
 }
