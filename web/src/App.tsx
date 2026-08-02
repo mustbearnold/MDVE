@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 
 import { subscribeDiagram } from './api';
 import { ActivityRail } from './components/ActivityRail';
@@ -9,7 +9,6 @@ import { CommandPalette } from './components/CommandPalette';
 import { ContextTabs, type ContextView } from './components/ContextTabs';
 import { Inspector } from './components/Inspector';
 import { HistoryPanel } from './components/HistoryPanel';
-import { OutlinePanel } from './components/OutlinePanel';
 import { Preview } from './components/Preview';
 import { Toolbar } from './components/Toolbar';
 import { WorkbenchTabs, type WorkbenchView } from './components/WorkbenchTabs';
@@ -18,6 +17,7 @@ import { flushDiagramBeforeNavigation, useStore } from './state/store';
 const MIN_SOURCE_WIDTH = 260;
 const MIN_RIGHT_WIDTH = 280;
 const MIN_PREVIEW_WIDTH = 440;
+const OutlinePanel = lazy(() => import('./components/OutlinePanel').then((module) => ({ default: module.OutlinePanel })));
 
 function PanelDivider({
   side,
@@ -346,7 +346,11 @@ export function App(): JSX.Element {
                 className={`side-view side-outline${contextView === 'outline' ? ' side-view-active' : ''}`}
                 id="workbench-outline"
               >
-                <OutlinePanel />
+                {contextView === 'outline' && (
+                  <Suspense fallback={<div className="outline-loading" role="status">Loading outline…</div>}>
+                    <OutlinePanel />
+                  </Suspense>
+                )}
               </div>
             </aside>
             {!sourcePanelOpen && (
