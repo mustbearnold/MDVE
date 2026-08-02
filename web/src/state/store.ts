@@ -90,6 +90,7 @@ interface Store {
 
 const HISTORY_LIMIT = 200;
 let diagramPersistence: ReturnType<typeof createDiagramPersistence>;
+let loadSessionRequest = 0;
 
 function chatForConversation(conversation: ConversationRecord | undefined): ChatMessage[] {
   return (conversation?.messages ?? []).map((message) => ({
@@ -246,19 +247,24 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   loadSession: async (id, opts = {}) => {
+    const requestId = ++loadSessionRequest;
     await flushDiagramBeforeNavigation(get().session);
+    if (requestId !== loadSessionRequest) return;
 
     let targetId = id;
     let loaded: Awaited<ReturnType<typeof api.getSession>>;
     if (targetId) {
       loaded = await api.getSession(targetId);
+      if (requestId !== loadSessionRequest) return;
       if (opts.startup && (loaded.session.archived || loaded.session.trashed)) {
         targetId = (await api.startup(targetId)).session.id;
         loaded = await api.getSession(targetId);
+        if (requestId !== loadSessionRequest) return;
       }
     } else {
       targetId = (await api.startup()).session.id;
       loaded = await api.getSession(targetId);
+      if (requestId !== loadSessionRequest) return;
     }
     const { session, source, workspace } = loaded;
     diagramPersistence.seed(session.id, session.revision ?? 0);
@@ -281,9 +287,12 @@ export const useStore = create<Store>((set, get) => ({
     });
     localStorage.setItem('mdve.session', session.id);
     await get().refreshSessions();
+    if (requestId !== loadSessionRequest || get().session?.id !== session.id) return;
     await get().loadConversations();
+    if (requestId !== loadSessionRequest || get().session?.id !== session.id) return;
     try {
       const draft = await readRecoveryDraft(session.id);
+      if (requestId !== loadSessionRequest || get().session?.id !== session.id) return;
       if (draft && draft.source !== source) {
         if (draft.baseRevision === (session.revision ?? 0)) {
           set({ draftStatus: 'available', recoveryDraft: draft });
@@ -377,6 +386,7 @@ export const useStore = create<Store>((set, get) => ({
     if (!session) return;
     try {
       const { conversations } = await api.conversations(session.id);
+      if (get().session?.id !== session.id) return;
       const selected = selectedConversation(conversations, session.selectedConversationId);
       set((state) => ({
         conversations,
@@ -385,6 +395,7 @@ export const useStore = create<Store>((set, get) => ({
         session: state.session ? { ...state.session, selectedConversationId: selected?.id } : state.session,
       }));
     } catch {
+      if (get().session?.id !== session.id) return;
       // Keep older workspaces usable; the first send creates the store.
       set({ conversations: [], conversationId: null, chat: [] });
     }

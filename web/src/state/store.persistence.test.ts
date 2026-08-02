@@ -93,3 +93,54 @@ test('switching Diagrams flushes the current edit before loading the target', as
     globalThis.localStorage = originalLocalStorage;
   }
 });
+
+test('a newer Diagram load cannot be overwritten by a slower background load', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalLocalStorage = globalThis.localStorage;
+  let releaseStale!: () => void;
+  const staleResponse = new Promise<void>((resolve) => {
+    releaseStale = resolve;
+  });
+
+  globalThis.localStorage = { setItem: () => undefined } as unknown as Storage;
+  globalThis.fetch = (async (input) => {
+    const path = String(input);
+    if (path === '/api/sessions/stale') {
+      await staleResponse;
+      return Response.json({
+        session: { ...session('stale'), archived: false },
+        source: 'flowchart TD\n  stale[Stale]\n',
+        revision: 1,
+        checksum: 'stale',
+        workspace: '/tmp/stale',
+      });
+    }
+    if (path === '/api/sessions/fresh') {
+      return Response.json({
+        session: { ...session('fresh'), archived: true },
+        source: 'flowchart TD\n  fresh[Fresh]\n',
+        revision: 1,
+        checksum: 'fresh',
+        workspace: '/tmp/fresh',
+      });
+    }
+    if (path === '/api/sessions?scope=recent') return Response.json({ sessions: [session('fresh')] });
+    if (path === '/api/sessions/fresh/conversations') return Response.json({ conversations: [] });
+    throw new Error(`Unexpected request: ${path}`);
+  }) as typeof fetch;
+
+  try {
+    useStore.setState({ session: null, source: '', revision: 0, conversations: [], conversationId: null });
+    const staleLoad = useStore.getState().loadSession('stale');
+    await wait(5);
+    await useStore.getState().loadSession('fresh');
+    assert.equal(useStore.getState().session?.id, 'fresh');
+
+    releaseStale();
+    await staleLoad;
+    assert.equal(useStore.getState().session?.id, 'fresh');
+  } finally {
+    globalThis.fetch = originalFetch;
+    globalThis.localStorage = originalLocalStorage;
+  }
+});
