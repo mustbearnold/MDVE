@@ -1045,7 +1045,7 @@ button.danger:hover:not(:disabled) {
 
 .chat-conversation {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   align-items: center;
   gap: var(--space-1);
   margin-top: var(--space-2);
@@ -1057,14 +1057,23 @@ button.danger:hover:not(:disabled) {
   font-size: 11px;
 }
 
+.chat-conversation label,
+.chat-conversation select {
+  grid-column: 1 / -1;
+}
+
 .chat-conversation select {
   min-width: 0;
 }
 
 .chat-conversation button {
+  min-width: 0;
   min-height: 32px;
   padding: 4px 7px;
   font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chat-conversation-status {
@@ -1411,8 +1420,8 @@ button.danger:hover:not(:disabled) {
     grid-template-columns: 1fr 1fr;
   }
 
-  .chat-conversation label {
-    grid-column: 1 / -1;
+  .chat-conversation button {
+    min-width: 0;
   }
 }
 
@@ -1540,7 +1549,7 @@ button.danger:hover:not(:disabled) {
   }
 
   .chat-conversation select,
-  .chat-conversation button:first-of-type {
+  .chat-conversation button {
     grid-column: 1 / -1;
   }
 }
@@ -1906,4 +1915,34 @@ summary:focus-visible,
 .history-status {
   background: rgba(126, 91, 24, 0.16);
   border-color: rgba(212, 168, 79, 0.38);
+}
+
+/* Sloppiness guards ------------------------------------------------- */
+
+button {
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.toolbar-menu-panel button,
+.preview-context-menu button {
+  white-space: normal;
+}
+
+.chat-conversation select,
+.chat-provider select {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-conversation button {
+  min-width: 0;
+}
+
+@media (max-width: 600px) {
+  .chat-conversation button {
+    grid-column: 1 / -1;
+  }
 }
