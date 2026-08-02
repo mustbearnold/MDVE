@@ -644,11 +644,13 @@ button.danger:hover:not(:disabled) {
 }
 
 .side-inspector {
-  flex: 0 1 44%;
+  flex: 0 1 auto;
+  min-height: 220px;
+  max-height: 52%;
 }
 
 .side-agent {
-  flex: 1 1 56%;
+  flex: 1 1 auto;
 }
 
 .side-history {
@@ -1018,6 +1020,7 @@ button.danger:hover:not(:disabled) {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(72px, auto);
   gap: 6px;
+  margin-top: 6px;
 }
 
 .chat-provider label,
@@ -1035,6 +1038,61 @@ button.danger:hover:not(:disabled) {
 
 .chat-provider .effort-select {
   max-width: 104px;
+}
+
+.chat-settings {
+  margin-top: var(--space-2);
+}
+
+.chat-settings summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: var(--control-height);
+  padding: 7px 10px;
+  color: var(--text-secondary);
+  background: rgba(21, 33, 58, 0.84);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  list-style: none;
+}
+
+.chat-settings summary::-webkit-details-marker {
+  display: none;
+}
+
+.chat-settings summary::after {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  margin: -3px 1px 1px auto;
+  content: '';
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+}
+
+.chat-settings[open] summary::after {
+  margin-top: 3px;
+  transform: rotate(225deg);
+}
+
+.chat-settings-title {
+  flex: 0 0 auto;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.chat-settings-value {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chat-warning {
@@ -1214,6 +1272,16 @@ button.danger:hover:not(:disabled) {
 
 .chat-empty p {
   margin: var(--space-1) 0 var(--space-2);
+}
+
+.chat-examples {
+  margin-top: var(--space-2);
+}
+
+.chat-examples summary {
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 12px;
 }
 
 .chat-empty ul {
@@ -1630,6 +1698,23 @@ summary:focus-visible,
   box-shadow: none;
 }
 
+.toolbar-edit .icon-button {
+  color: #85868a;
+  background: transparent;
+  border-color: transparent;
+}
+
+.toolbar-edit .icon-button:hover:not(:disabled) {
+  color: #eeeeee;
+  background: #232426;
+  border-color: #343537;
+}
+
+.toolbar-edit .icon-button:disabled {
+  background: transparent;
+  border-color: transparent;
+}
+
 .toolbar::after {
   display: none;
 }
@@ -1676,6 +1761,21 @@ summary:focus-visible,
 }
 
 .toolbar-menu[open] summary {
+  background: #2a2b2d;
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.chat-settings summary {
+  background: #232426;
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.chat-settings-value {
+  color: #a3a4a7;
+}
+
+.chat-settings summary:hover,
+.chat-settings[open] summary {
   background: #2a2b2d;
   border-color: rgba(255, 255, 255, 0.3);
 }

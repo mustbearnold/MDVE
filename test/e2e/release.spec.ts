@@ -189,6 +189,37 @@ test('intermediate desktop toolbar reflows before controls collide', async ({ pa
   expect(geometry.statusBottom).toBeLessThanOrEqual(geometry.nodeTop + 1);
 });
 
+test('desktop side chrome keeps optional agent controls tucked away', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const geometry = await page.evaluate(() => {
+    const inspector = document.querySelector('.side-inspector')?.getBoundingClientRect();
+    const agent = document.querySelector('.side-agent')?.getBoundingClientRect();
+    const chatLog = document.querySelector('.chat-log');
+    if (!inspector || !agent || !chatLog) throw new Error('Desktop side-panel geometry is incomplete');
+    return {
+      documentOverflow: document.documentElement.scrollWidth - window.innerWidth,
+      inspectorHeight: inspector.height,
+      agentHeight: agent.height,
+      chatLogHeight: chatLog.getBoundingClientRect().height,
+      chatLogScrollHeight: chatLog.scrollHeight,
+      settingsOpen: document.querySelector('.chat-settings')?.hasAttribute('open'),
+      examplesOpen: document.querySelector('.chat-examples')?.hasAttribute('open'),
+    };
+  });
+
+  expect(geometry.documentOverflow).toBeLessThanOrEqual(1);
+  expect(geometry.agentHeight).toBeGreaterThan(geometry.inspectorHeight);
+  expect(geometry.chatLogHeight).toBeGreaterThan(100);
+  expect(geometry.chatLogScrollHeight).toBeLessThanOrEqual(geometry.chatLogHeight + 1);
+  expect(geometry.settingsOpen).toBe(false);
+  expect(geometry.examplesOpen).toBe(false);
+
+  await page.locator('.chat-settings summary').click();
+  await expect(page.getByLabel('Provider')).toBeVisible();
+  await page.locator('.chat-settings summary').click();
+  await expect(page.getByLabel('Provider')).toBeHidden();
+});
+
 test('large text, forced colors, and reduced motion preserve the critical workflow', async ({ page }) => {
   await page.emulateMedia({ forcedColors: 'active', reducedMotion: 'reduce' });
   await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });

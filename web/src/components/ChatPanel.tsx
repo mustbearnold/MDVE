@@ -30,6 +30,7 @@ export function ChatPanel(): JSX.Element {
   const provider = providers.find((p) => p.id === providerId);
   const modelInfo = provider?.models.find((m) => m.id === model);
   const conversation = conversations.find((candidate) => candidate.id === conversationId);
+  const settingsSummary = [provider?.label ?? 'No provider', modelInfo?.label ?? 'No model', effort || 'default'].join(' · ');
 
   useEffect(() => {
     const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
@@ -119,43 +120,49 @@ export function ChatPanel(): JSX.Element {
             {conversation.status} · Diagram revision {conversation.lastRevision}
           </p>
         )}
-        <div className="chat-provider">
-          <label>
-            <span className="sr-only">Provider</span>
-            <select aria-label="Provider" value={providerId} onChange={(e) => setProvider(e.target.value)}>
-              {providers.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          {provider && provider.models.length > 0 && (
+        <details className="chat-settings">
+          <summary>
+            <span className="chat-settings-title">Agent settings</span>
+            <span className="chat-settings-value" title={settingsSummary}>{settingsSummary}</span>
+          </summary>
+          <div className="chat-provider">
             <label>
-              <span className="sr-only">Model</span>
-              <select aria-label="Model" value={model} onChange={(e) => setModel(e.target.value)}>
-                {provider.models.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.label}
-                    {m.deprecated ? ' (deprecated)' : ''}
+              <span className="sr-only">Provider</span>
+              <select aria-label="Provider" value={providerId} onChange={(e) => setProvider(e.target.value)}>
+                {providers.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label}
                   </option>
                 ))}
               </select>
             </label>
-          )}
-          {modelInfo && modelInfo.efforts.length > 0 && (
-            <label className="effort-select">
-              <span className="sr-only">Reasoning effort</span>
-              <select aria-label="Reasoning effort" value={effort} onChange={(e) => setEffort(e.target.value)}>
-                {modelInfo.efforts.map((e) => (
-                  <option key={e} value={e}>
-                    {e}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-        </div>
+            {provider && provider.models.length > 0 && (
+              <label>
+                <span className="sr-only">Model</span>
+                <select aria-label="Model" value={model} onChange={(e) => setModel(e.target.value)}>
+                  {provider.models.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.label}
+                      {m.deprecated ? ' (deprecated)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {modelInfo && modelInfo.efforts.length > 0 && (
+              <label className="effort-select">
+                <span className="sr-only">Reasoning effort</span>
+                <select aria-label="Reasoning effort" value={effort} onChange={(e) => setEffort(e.target.value)}>
+                  {modelInfo.efforts.map((e) => (
+                    <option key={e} value={e}>
+                      {e}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
+        </details>
         {provider && !provider.status.ok && <p className="chat-warning">{provider.status.detail}</p>}
       </header>
 
@@ -164,11 +171,14 @@ export function ChatPanel(): JSX.Element {
           <div className="chat-empty">
             <strong>Describe a diagram change</strong>
             <p>The agent works against this Diagram's current Mermaid source.</p>
-            <ul>
-              <li>“Add an error path from the decision node”</li>
-              <li>“Turn this into a swimlane-style flow with subgraphs”</li>
-              <li>“Rename every node to sentence case”</li>
-            </ul>
+            <details className="chat-examples">
+              <summary>Example requests</summary>
+              <ul>
+                <li>“Add an error path from the decision node”</li>
+                <li>“Turn this into a swimlane-style flow with subgraphs”</li>
+                <li>“Rename every node to sentence case”</li>
+              </ul>
+            </details>
           </div>
         )}
 
