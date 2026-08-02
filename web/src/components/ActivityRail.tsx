@@ -1,8 +1,9 @@
 import { Icon, type IconName } from './Icon';
+import type { ContextView } from './ContextTabs';
 import type { WorkbenchView } from './WorkbenchTabs';
 
 type ActivityItem = {
-  id: 'library' | WorkbenchView;
+  id: 'library' | 'outline' | WorkbenchView;
   label: string;
   icon: IconName;
 };
@@ -11,6 +12,7 @@ const ACTIVITY_ITEMS: ActivityItem[] = [
   { id: 'library', label: 'Library', icon: 'library' },
   { id: 'source', label: 'Source', icon: 'source' },
   { id: 'preview', label: 'Preview', icon: 'preview' },
+  { id: 'outline', label: 'Outline', icon: 'outline' },
   { id: 'inspector', label: 'Inspector', icon: 'inspector' },
   { id: 'agent', label: 'Agent', icon: 'agent' },
   { id: 'history', label: 'History', icon: 'history' },
@@ -18,12 +20,16 @@ const ACTIVITY_ITEMS: ActivityItem[] = [
 
 export function ActivityRail({
   activeView,
+  activeContext,
   onSelect,
+  onOutline,
   onLibrary,
   onCommand,
 }: {
   activeView: WorkbenchView;
+  activeContext: ContextView;
   onSelect: (view: WorkbenchView) => void;
+  onOutline: () => void;
   onLibrary: () => void;
   onCommand: () => void;
 }): JSX.Element {
@@ -32,7 +38,13 @@ export function ActivityRail({
       <div className="activity-rail-items">
         {ACTIVITY_ITEMS.map((item) => {
           const isLibrary = item.id === 'library';
-          const isActive = !isLibrary && item.id === activeView;
+          const isOutline = item.id === 'outline';
+          const isContextView = item.id === 'inspector' || item.id === 'agent' || item.id === 'history';
+          const isActive = !isLibrary && (isOutline
+            ? activeContext === 'outline'
+            : isContextView
+              ? item.id === activeView && activeContext === item.id
+              : item.id === activeView);
           return (
             <button
               key={item.id}
@@ -43,6 +55,7 @@ export function ActivityRail({
               title={item.label}
               onClick={() => {
                 if (isLibrary) onLibrary();
+                else if (isOutline) onOutline();
                 else onSelect(item.id as WorkbenchView);
               }}
             >

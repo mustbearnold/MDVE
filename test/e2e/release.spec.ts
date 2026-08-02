@@ -255,7 +255,38 @@ test('v2 canvas shell exposes activity navigation, command palette, and agent tr
   expect(paletteAccessibility.violations, 'command palette accessibility violations').toEqual([]);
   await palette.getByRole('button', { name: 'Open agent' }).click();
   await expect(palette).toBeHidden();
-  await expect(page.getByRole('textbox', { name: 'Change request' })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Change request', exact: true })).toBeVisible();
+
+  const quickChange = page.getByRole('textbox', { name: 'Quick change request' });
+  await quickChange.fill('Add a retry path after validation');
+  await page.getByRole('button', { name: 'Open Agent with change request' }).click();
+  await expect(page.getByRole('textbox', { name: 'Change request', exact: true })).toHaveValue('Add a retry path after validation');
+
+  await page.getByRole('button', { name: 'Source', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Mermaid source' }).fill(
+    'flowchart TD\n  start[Start] --> decide{Decide}\n  decide -->|yes| done[Done]\n',
+  );
+  await waitForSaved(page, 2);
+  await page.getByRole('button', { name: 'Preview', exact: true }).click();
+  await page.locator('.activity-rail').getByRole('button', { name: 'Outline', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Outline', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Select node Decide (decide)' })).toBeVisible();
+  const outlineAccessibility = await new AxeBuilder({ page }).analyze();
+  expect(outlineAccessibility.violations, 'outline accessibility violations').toEqual([]);
+  await page.getByRole('button', { name: 'Select node Decide (decide)' }).click();
+  await expect(page.locator('.outline-item-active')).toContainText('Decide');
+  await page.getByRole('button', { name: 'Inspect', exact: true }).click();
+  await expect(page.locator('#workbench-inspector').getByRole('heading', { name: 'Node', exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Open command palette' }).click();
+  await page.getByRole('searchbox', { name: 'Search commands' }).fill('focus canvas');
+  await page.getByRole('button', { name: 'Focus canvas' }).click();
+  await expect(page.locator('.app')).toHaveClass(/focus-mode/);
+  await expect(page.getByRole('navigation', { name: 'Workbench activity' })).toBeHidden();
+  await expect(page.locator('#workbench-source')).toBeHidden();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.app')).not.toHaveClass(/focus-mode/);
+  await expect(page.getByRole('navigation', { name: 'Workbench activity' })).toBeVisible();
 
   await page.getByRole('button', { name: 'Open command palette' }).click();
   await page.getByRole('searchbox', { name: 'Search commands' }).fill('history');

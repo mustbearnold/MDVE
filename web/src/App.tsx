@@ -6,9 +6,10 @@ import { ChatPanel } from './components/ChatPanel';
 import { ChangeTray } from './components/ChangeTray';
 import { CodePane } from './components/CodePane';
 import { CommandPalette } from './components/CommandPalette';
-import { ContextTabs } from './components/ContextTabs';
+import { ContextTabs, type ContextView } from './components/ContextTabs';
 import { Inspector } from './components/Inspector';
 import { HistoryPanel } from './components/HistoryPanel';
+import { OutlinePanel } from './components/OutlinePanel';
 import { Preview } from './components/Preview';
 import { Toolbar } from './components/Toolbar';
 import { WorkbenchTabs, type WorkbenchView } from './components/WorkbenchTabs';
@@ -88,22 +89,53 @@ export function App(): JSX.Element {
   const [sourcePanelWidth, setSourcePanelWidth] = useState(320);
   const [rightPanelWidth, setRightPanelWidth] = useState(340);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [contextView, setContextView] = useState<ContextView>('inspector');
+  const [focusMode, setFocusMode] = useState(false);
   const layoutRef = useRef<HTMLElement>(null);
 
   const selectView = useCallback((view: WorkbenchView) => {
+    setFocusMode(false);
     setActiveView(view);
     if (view === 'source') setSourcePanelOpen(true);
-    if (view === 'inspector' || view === 'agent' || view === 'history') setRightPanelOpen(true);
+    if (view === 'preview') setContextView('inspector');
+    if (view === 'inspector' || view === 'agent' || view === 'history') {
+      setContextView(view);
+      setRightPanelOpen(true);
+    }
   }, []);
 
   const focusLibrary = useCallback(() => {
+    setFocusMode(false);
     document.querySelector<HTMLSelectElement>('#diagram-select')?.focus();
   }, []);
 
-  const openAgent = useCallback(() => {
+  const openOutline = useCallback(() => {
+    setFocusMode(false);
+    setActiveView('inspector');
+    setContextView('outline');
+    setRightPanelOpen(true);
+  }, []);
+
+  const selectContextView = useCallback((view: ContextView) => {
+    setFocusMode(false);
+    setContextView(view);
+    setRightPanelOpen(true);
+    setActiveView(view === 'outline' ? 'inspector' : view);
+  }, []);
+
+  const openAgent = useCallback((prompt?: string) => {
+    setFocusMode(false);
     selectView('agent');
-    requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('#agent-prompt')?.focus());
+    requestAnimationFrame(() => {
+      if (prompt?.trim()) window.dispatchEvent(new CustomEvent<string>('mdve:agent-prompt', { detail: prompt.trim() }));
+      else document.querySelector<HTMLTextAreaElement>('#agent-prompt')?.focus();
+    });
   }, [selectView]);
+
+  const toggleFocusMode = useCallback(() => {
+    setFocusMode((current) => !current);
+    setActiveView('preview');
+  }, []);
 
   const updatePanelWidth = useCallback((side: 'source' | 'right', requested: number) => {
     const layoutWidth = layoutRef.current?.getBoundingClientRect().width ?? window.innerWidth;
@@ -158,16 +190,20 @@ export function App(): JSX.Element {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+      if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'Enter') {
+        event.preventDefault();
+        toggleFocusMode();
+      } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
         setCommandPaletteOpen((open) => !open);
       } else if (event.key === 'Escape') {
-        setCommandPaletteOpen(false);
+        if (commandPaletteOpen) setCommandPaletteOpen(false);
+        else if (focusMode) setFocusMode(false);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [commandPaletteOpen, focusMode, toggleFocusMode]);
 
   // Global undo/redo.
   useEffect(() => {
@@ -191,14 +227,8 @@ export function App(): JSX.Element {
     return <div className="boot">Starting MDVE…</div>;
   }
 
-  const contextView: Extract<WorkbenchView, 'inspector' | 'agent' | 'history'> = activeView === 'agent'
-    ? 'agent'
-    : activeView === 'history'
-      ? 'history'
-      : 'inspector';
-
   return (
-    <div className="app">
+    <div className={`app${focusMode ? ' focus-mode' : ''}`}>
       <a className="skip-link" href="#workbench-main">
         Skip to workbench
       </a>
@@ -206,18 +236,28 @@ export function App(): JSX.Element {
       <div className="workbench-shell">
         <ActivityRail
           activeView={activeView}
+          activeContext={contextView}
           onSelect={selectView}
+          onOutline={openOutline}
           onLibrary={focusLibrary}
           onCommand={() => setCommandPaletteOpen(true)}
         />
         <div className="workbench-stage">
+          {focusMode && (
+            <button className="focus-exit" type="button" aria-label="Exit focus mode" onClick={() => setFocusMode(false)}>
+              <span>Exit focus</span>
+              <kbd>Esc</kbd>
+            </button>
+          )}
           <WorkbenchTabs activeView={activeView} onChange={selectView} />
           <main
             className="layout"
             id="workbench-main"
             ref={layoutRef}
             style={{
-              gridTemplateColumns: `${sourcePanelOpen ? `${sourcePanelWidth}px 10px` : '0px 0px'} minmax(0, 1fr) ${rightPanelOpen ? `10px ${rightPanelWidth}px` : '0px 0px'}`,
+              gridTemplateColumns: focusMode
+                ? 'minmax(0, 1fr)'
+                : `${sourcePanelOpen ? `${sourcePanelWidth}px 10px` : '0px 0px'} minmax(0, 1fr) ${rightPanelOpen ? `10px ${rightPanelWidth}px` : '0px 0px'}`,
             }}
           >
             <section
@@ -264,16 +304,16 @@ export function App(): JSX.Element {
               hidden={!rightPanelOpen}
             />
             <aside
-              className={`pane pane-side${activeView === 'inspector' || activeView === 'agent' || activeView === 'history' ? ' pane-active' : ''}${activeView === 'history' ? ' pane-history-active' : ''}${rightPanelOpen ? '' : ' pane-collapsed'}`}
+              className={`pane pane-side${activeView === 'inspector' || activeView === 'agent' || activeView === 'history' ? ' pane-active' : ''}${contextView === 'history' ? ' pane-history-active' : ''}${rightPanelOpen ? '' : ' pane-collapsed'}`}
               id="workbench-side"
               aria-label="Right panel"
             >
               <div className="side-panel-actions desktop-panel-control">
                 <div className="side-panel-title">
                   <span>Context</span>
-                  <strong>{contextView === 'inspector' ? 'Inspect' : contextView === 'agent' ? 'Agent' : 'History'}</strong>
+                  <strong>{contextView === 'inspector' ? 'Inspect' : contextView === 'outline' ? 'Outline' : contextView === 'agent' ? 'Agent' : 'History'}</strong>
                 </div>
-                <ContextTabs activeView={contextView} onChange={selectView} />
+                <ContextTabs activeView={contextView} onChange={selectContextView} />
                 <button
                   className="panel-close-button"
                   type="button"
@@ -301,6 +341,12 @@ export function App(): JSX.Element {
                 id="workbench-history"
               >
                 <HistoryPanel />
+              </div>
+              <div
+                className={`side-view side-outline${contextView === 'outline' ? ' side-view-active' : ''}`}
+                id="workbench-outline"
+              >
+                <OutlinePanel />
               </div>
             </aside>
             {!sourcePanelOpen && (
@@ -333,7 +379,10 @@ export function App(): JSX.Element {
         open={commandPaletteOpen}
         onClose={() => setCommandPaletteOpen(false)}
         onOpenView={selectView}
+        onOpenOutline={openOutline}
         onLibrary={focusLibrary}
+        focusMode={focusMode}
+        onToggleFocus={toggleFocusMode}
       />
     </div>
   );

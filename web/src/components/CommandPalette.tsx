@@ -14,12 +14,18 @@ export function CommandPalette({
   open,
   onClose,
   onOpenView,
+  onOpenOutline,
   onLibrary,
+  focusMode,
+  onToggleFocus,
 }: {
   open: boolean;
   onClose: () => void;
   onOpenView: (view: WorkbenchView) => void;
+  onOpenOutline: () => void;
   onLibrary: () => void;
+  focusMode: boolean;
+  onToggleFocus: () => void;
 }): JSX.Element | null {
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
@@ -55,6 +61,13 @@ export function CommandPalette({
       run: () => onOpenView('inspector'),
     },
     {
+      id: 'outline',
+      label: 'Open outline',
+      description: 'Navigate every node and link in the diagram',
+      shortcut: 'O',
+      run: onOpenOutline,
+    },
+    {
       id: 'agent',
       label: 'Open agent',
       description: 'Describe a change and review the proposed result',
@@ -68,7 +81,14 @@ export function CommandPalette({
       shortcut: 'H',
       run: () => onOpenView('history'),
     },
-  ], [onLibrary, onOpenView]);
+    {
+      id: 'focus',
+      label: focusMode ? 'Exit focus mode' : 'Focus canvas',
+      description: focusMode ? 'Restore the source and context panels' : 'Give the diagram the full workbench stage',
+      shortcut: '⌘⇧↵',
+      run: onToggleFocus,
+    },
+  ], [focusMode, onLibrary, onOpenOutline, onOpenView, onToggleFocus]);
 
   const filteredCommands = useMemo(() => {
     const needle = query.trim().toLowerCase();

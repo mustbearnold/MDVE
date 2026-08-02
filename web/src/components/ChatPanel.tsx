@@ -27,6 +27,7 @@ export function ChatPanel(): JSX.Element {
   const [input, setInput] = useState('');
   const [showTrace, setShowTrace] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const provider = providers.find((p) => p.id === providerId);
   const modelInfo = provider?.models.find((m) => m.id === model);
   const conversation = conversations.find((candidate) => candidate.id === conversationId);
@@ -36,6 +37,17 @@ export function ChatPanel(): JSX.Element {
     const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior });
   }, [chat]);
+
+  useEffect(() => {
+    const onPrompt = (event: Event) => {
+      const prompt = (event as CustomEvent<string>).detail;
+      if (!prompt) return;
+      setInput(prompt);
+      requestAnimationFrame(() => inputRef.current?.focus());
+    };
+    window.addEventListener('mdve:agent-prompt', onPrompt);
+    return () => window.removeEventListener('mdve:agent-prompt', onPrompt);
+  }, []);
 
   const submit = async () => {
     const prompt = input.trim();
@@ -207,6 +219,7 @@ export function ChatPanel(): JSX.Element {
           Change request
         </label>
         <textarea
+          ref={inputRef}
           id="agent-prompt"
           aria-label="Change request"
           value={input}
