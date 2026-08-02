@@ -1312,11 +1312,7 @@ button.danger:hover:not(:disabled) {
 
 /* Responsive workbench ---------------------------------------------- */
 
-@media (max-width: 1120px) {
-  :root {
-    --control-height: 44px;
-  }
-
+@media (max-width: 1200px) {
   .toolbar {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto auto;
@@ -1344,6 +1340,12 @@ button.danger:hover:not(:disabled) {
 
   .product-name {
     display: none;
+  }
+}
+
+@media (max-width: 1120px) {
+  :root {
+    --control-height: 44px;
   }
 
   .workbench-tabs {

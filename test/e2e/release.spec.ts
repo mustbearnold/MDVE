@@ -164,6 +164,31 @@ test('compact layout keeps the critical edit and recovery path operable', async 
   }
 });
 
+test('intermediate desktop toolbar reflows before controls collide', async ({ page }) => {
+  await page.setViewportSize({ width: 1160, height: 800 });
+  const geometry = await page.evaluate(() => {
+    const toolbar = document.querySelector('.toolbar');
+    const context = document.querySelector('.toolbar-context');
+    const status = document.querySelector('.save-status');
+    const nodeButton = [...document.querySelectorAll('.toolbar button')].find((button) => button.textContent?.includes('Node'));
+    if (!toolbar || !context || !status || !nodeButton) throw new Error('Toolbar geometry is incomplete');
+    const statusRect = status.getBoundingClientRect();
+    const nodeRect = nodeButton.getBoundingClientRect();
+    return {
+      documentOverflow: document.documentElement.scrollWidth - window.innerWidth,
+      contextOverflow: context.scrollWidth - context.clientWidth,
+      toolbarHeight: toolbar.getBoundingClientRect().height,
+      statusBottom: statusRect.bottom,
+      nodeTop: nodeRect.top,
+    };
+  });
+
+  expect(geometry.documentOverflow).toBeLessThanOrEqual(1);
+  expect(geometry.contextOverflow).toBeLessThanOrEqual(1);
+  expect(geometry.toolbarHeight).toBeGreaterThan(59);
+  expect(geometry.statusBottom).toBeLessThanOrEqual(geometry.nodeTop + 1);
+});
+
 test('large text, forced colors, and reduced motion preserve the critical workflow', async ({ page }) => {
   await page.emulateMedia({ forcedColors: 'active', reducedMotion: 'reduce' });
   await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
