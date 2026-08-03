@@ -6,10 +6,11 @@ MDVE is a local Linux workbench for Mermaid diagrams. Edit the source, inspect
 the rendered graph, make safe structured flowchart changes, and ask Codex to
 transform the same durable diagram.
 
-The current development label is the v3 semantic workbench (2026-08-03). It
-builds on the v1 durability contract and the v2 single-diagram workbench while
-remaining an iterative development build, not an official release.
-MDVE is Codex-only and runs against the documented Codex app-server interface.
+The current development label is MDVE v3.0.0 (2026-08-03). It builds on the v1
+durability contract and the v2 single-diagram workbench while remaining an
+iterative development build, not an official release.
+MDVE supports Codex and a local BYOK OpenAI-compatible provider. Codex runs
+against the documented Codex app-server interface.
 MDVE does not read Codex credential files, model caches, or private config; the
 installed `codex` runtime owns authentication and model entitlements.
 
@@ -20,7 +21,7 @@ CLI (`>=0.146.0 <0.147.0`) already installed and authenticated:
 
 ```bash
 codex login
-npm install --global mdve@1.0.0
+npm install --global mdve@3.0.0
 mdve
 ```
 
@@ -71,6 +72,27 @@ to add a node at that location, or right-click a node and choose Start link,
 then select its target. The close/open controls hide or restore the Source and
 right panels, and either vertical divider resizes the workbench. Dividers also
 support keyboard arrow resizing when focused.
+
+## AI connections and the paid path
+
+The local editor is free without an account. Codex remains bring-your-own
+through the installed Codex runtime. Agent settings also include a BYOK
+OpenAI-compatible provider for OpenAI, OpenRouter, Ollama, LM Studio, and
+similar endpoints. Configure it from Agent settings; the key is written only
+to `~/.mdve/provider-openai-compatible.json` with restrictive permissions.
+
+MDVE Pro is the first commercial path: a recommended $49 one-time license for
+the current major version, with clean desktop Presentation mode as its first
+paid capability. The checkout is intentionally not hard-coded into a
+development build. Connect a merchant-of-record store before selling by
+setting `MDVE_GUMROAD_PRODUCT_ID` and `MDVE_PRO_CHECKOUT_URL` in the environment
+that launches MDVE. The app verifies a purchased key server-side, never sends
+it to an MDVE service, and keeps a 30-day offline grace period.
+
+The future recurring Cloud tier is deferred until users demonstrate demand for
+encrypted sync, sharing, collaboration, or hosted AI credits. That avoids
+turning the free local editor into a subscription tax or making MDVE absorb
+model costs before there is a paying audience.
 
 ## The workbench
 
@@ -123,20 +145,26 @@ reversible and does not delete source, history, or Conversations.
 | `MDVE_HOST` | `127.0.0.1` | Bind address; the launcher keeps this loopback-only |
 | `MDVE_CODEX_BIN` | `codex` | Codex executable to run |
 | `MDVE_WEB_DIST` | packaged `dist/web` | Production UI directory |
+| `MDVE_GUMROAD_PRODUCT_ID` | unset | Store product ID used to verify MDVE Pro keys |
+| `MDVE_PRO_CHECKOUT_URL` | unset | Store checkout URL shown by the Pro dialog |
+| `MDVE_OPENAI_COMPATIBLE_BASE_URL` | saved local value or `https://api.openai.com/v1` | Optional BYOK endpoint override |
+| `MDVE_OPENAI_COMPATIBLE_API_KEY` | saved local value | Optional BYOK key override |
+| `MDVE_OPENAI_COMPATIBLE_MODEL` | saved local value | Optional BYOK model override |
 
 The development-only `PORT` and `HOST` aliases are also accepted by the server.
 
 ## Development status
 
-The package baseline remains version `1.0.0`; work continues iteratively on
-`master` under the v3 development label dated 2026-08-03. This repository state
-is not an official npm or GitHub publication. The release-gate harness remains
+The package baseline is version `3.0.0`; work continues iteratively on `master`
+under the v3 development label dated 2026-08-03. This repository state is not
+an official npm or GitHub publication, and the Pro store is not live until its
+deployment variables are connected. The release-gate harness remains
 available for a future public distribution, but publication-only owner, legal,
 registry, and trusted-publishing gates do not block normal development.
 
 ## Scope
 
 MDVE is a local Linux application for individual technical users who already
-use Mermaid and Codex. Hosted sync, accounts, real-time collaboration, a fully
-free-form canvas, mobile editing, and additional agent providers remain outside
-the current workbench boundary.
+use Mermaid and technical AI tools. Hosted sync, accounts, real-time
+collaboration, a fully free-form canvas, mobile editing, and a hosted MDVE AI
+service remain outside the current workbench boundary.

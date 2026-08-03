@@ -14,7 +14,14 @@ import cors from 'cors';
 import express from 'express';
 
 import { CodexProvider } from './providers/codex.js';
+import {
+  clearOpenAICompatibleConfig,
+  getOpenAICompatibleConfigSummary,
+  OpenAICompatibleProvider,
+  saveOpenAICompatibleConfig,
+} from './providers/openai-compatible.js';
 import type { AgentEvent, Provider } from './providers/types.js';
+import { activateLicense, deactivateLicense, getLicenseStatus } from './license.js';
 import { PACKAGE_VERSION } from './version.js';
 import {
   DEFAULT_DIAGRAM,
@@ -70,7 +77,9 @@ const authSessions = new Set<string>();
 
 const providers = new Map<string, Provider>();
 const codex = new CodexProvider();
+const byok = new OpenAICompatibleProvider();
 providers.set(codex.id, codex);
+providers.set(byok.id, byok);
 
 const app = express();
 app.disable('x-powered-by');
@@ -250,6 +259,55 @@ app.get('/api/meta', async (_req, res) => {
     node: process.versions.node,
     provider: provider ? { id: provider.id, status: await provider.status() } : null,
   });
+});
+
+/* ------------------------------------------------------------------ *
+ * Local-first licensing and BYOK configuration
+ * ------------------------------------------------------------------ */
+
+app.get('/api/license', async (_req, res) => {
+  res.json(await getLicenseStatus());
+});
+
+app.post('/api/license/activate', async (req, res) => {
+  if (typeof req.body?.licenseKey !== 'string') return res.status(400).json({ error: 'licenseKey is required' });
+  try {
+    res.json(await activateLicense(req.body.licenseKey));
+  } catch (error) {
+    sendError(res, error, 502);
+  }
+});
+
+app.post('/api/license/deactivate', async (_req, res) => {
+  try {
+    res.json(await deactivateLicense());
+  } catch (error) {
+    sendError(res, error);
+  }
+});
+
+app.get('/api/providers/openai-compatible/config', async (_req, res) => {
+  res.json(await getOpenAICompatibleConfigSummary());
+});
+
+app.put('/api/providers/openai-compatible/config', async (req, res) => {
+  const baseUrl = req.body?.baseUrl;
+  const model = req.body?.model;
+  if (typeof baseUrl !== 'string' || typeof model !== 'string') return res.status(400).json({ error: 'baseUrl and model are required' });
+  if (req.body?.apiKey !== undefined && typeof req.body.apiKey !== 'string') return res.status(400).json({ error: 'apiKey must be a string when provided' });
+  try {
+    res.json(await saveOpenAICompatibleConfig({ baseUrl, model, apiKey: req.body.apiKey }));
+  } catch (error) {
+    sendError(res, error, 400);
+  }
+});
+
+app.delete('/api/providers/openai-compatible/config', async (_req, res) => {
+  try {
+    res.json(await clearOpenAICompatibleConfig());
+  } catch (error) {
+    sendError(res, error);
+  }
 });
 
 app.post('/api/sessions', async (req, res) => {

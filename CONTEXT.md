@@ -28,6 +28,9 @@ Canonical product vocabulary for MDVE. Decision rationale lives in the linked Wa
 - **Agent transformation** — A Codex turn that reads and edits a candidate `diagram.mmd` inside an isolated copy of its Diagram workspace and reports a proposal back to the workbench.
 - **Local web application** — MDVE's v1 delivery form: an `mdve` CLI starts one loopback-only process that serves the version-matched UI and API from a stable local origin and opens the system browser. It is local software, not a hosted service.
 - **Desktop shell** — An Electron window around the same version-matched loopback server and production UI. It owns the native window and server lifecycle but does not create a second diagram model, API, or persistence path.
+- **BYOK provider** — A user-configured OpenAI-compatible Agent provider. MDVE stores its endpoint configuration and API key locally with restrictive permissions and never turns the key into a hosted MDVE credential.
+- **MDVE Pro entitlement** — A device-local, store-verified license for the current major version. It unlocks paid product capabilities without gating the free local Mermaid workbench.
+- **Presentation mode** — A clean, single-canvas desktop view for presenting a Diagram. It is the first MDVE Pro capability.
 - **Release artifact** — The versioned npm package that installs the `mdve` executable and contains its version-matched launcher, server, and production UI.
 - **V1 release gate** — A non-waivable pass/fail criterion applied to one identified release candidate. MDVE may claim v1 only when every gate passes against the same Git commit and npm tarball recorded by integrity digest.
 - **Pre-commercial release** — A public, free-of-charge MDVE release with no billing or license-entitlement mechanism.
@@ -45,3 +48,4 @@ Canonical product vocabulary for MDVE. Decision rationale lives in the linked Wa
 - [Define the v1 release gates](.scratch/mdve-v1/issues/05-define-v1-release-gates.md)
 - [Keep Mermaid durable while introducing the v3 semantic model](docs/adr/0010-keep-mermaid-source-with-semantic-model.md)
 - [Stage agent changes as reviewable proposals](docs/adr/0011-stage-agent-changes-as-proposals.md)
+- [Fund the desktop product with local-first Pro and BYOK](docs/adr/0012-local-first-pro-entitlement-and-byok.md)

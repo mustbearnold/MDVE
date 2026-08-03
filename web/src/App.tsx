@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 
-import { subscribeDiagram } from './api';
+import { api, subscribeDiagram, type LicenseStatus } from './api';
 import { ActivityRail } from './components/ActivityRail';
 import { ChatPanel } from './components/ChatPanel';
 import { ChangeTray } from './components/ChangeTray';
@@ -9,6 +9,8 @@ import { CommandPalette } from './components/CommandPalette';
 import { ContextTabs, type ContextView } from './components/ContextTabs';
 import { Inspector } from './components/Inspector';
 import { HistoryPanel } from './components/HistoryPanel';
+import { ByokDialog } from './components/ByokDialog';
+import { LicenseDialog } from './components/LicenseDialog';
 import { Toolbar } from './components/Toolbar';
 import { WorkbenchTabs, type WorkbenchView } from './components/WorkbenchTabs';
 import { flushDiagramBeforeNavigation, useStore } from './state/store';
@@ -135,6 +137,10 @@ export function App(): JSX.Element {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [contextView, setContextView] = useState<ContextView>('inspector');
   const [focusMode, setFocusMode] = useState(false);
+  const [presentationMode, setPresentationMode] = useState(false);
+  const [license, setLicense] = useState<LicenseStatus | null>(null);
+  const [licenseDialogOpen, setLicenseDialogOpen] = useState(false);
+  const [byokDialogOpen, setByokDialogOpen] = useState(false);
   const layoutRef = useRef<HTMLElement>(null);
 
   const selectView = useCallback((view: WorkbenchView) => {
@@ -181,6 +187,18 @@ export function App(): JSX.Element {
     setActiveView('preview');
   }, []);
 
+  const openLicense = useCallback(() => setLicenseDialogOpen(true), []);
+  const openByok = useCallback(() => setByokDialogOpen(true), []);
+  const openPresentation = useCallback(() => {
+    if (license?.plan === 'pro') {
+      setPresentationMode(true);
+      setFocusMode(false);
+      setActiveView('preview');
+    } else {
+      setLicenseDialogOpen(true);
+    }
+  }, [license?.plan]);
+
   const updatePanelWidth = useCallback((side: 'source' | 'right', requested: number) => {
     const layoutWidth = layoutRef.current?.getBoundingClientRect().width ?? window.innerWidth;
     const otherWidth = side === 'source'
@@ -199,6 +217,7 @@ export function App(): JSX.Element {
     // application instance starts. Treat that shutdown race like the session
     // bootstrap race instead of surfacing an unhandled browser error.
     void loadProviders().catch(() => undefined);
+    void api.license().then(setLicense).catch(() => setLicense(null));
   }, [loadSession, loadProviders]);
 
   // Agent and out-of-band file edits arrive over SSE.
@@ -244,12 +263,15 @@ export function App(): JSX.Element {
         setCommandPaletteOpen((open) => !open);
       } else if (event.key === 'Escape') {
         if (commandPaletteOpen) setCommandPaletteOpen(false);
+        else if (licenseDialogOpen) setLicenseDialogOpen(false);
+        else if (byokDialogOpen) setByokDialogOpen(false);
+        else if (presentationMode) setPresentationMode(false);
         else if (focusMode) setFocusMode(false);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [commandPaletteOpen, focusMode, toggleFocusMode]);
+  }, [byokDialogOpen, commandPaletteOpen, focusMode, licenseDialogOpen, presentationMode, toggleFocusMode]);
 
   // Global undo/redo.
   useEffect(() => {
@@ -291,11 +313,11 @@ export function App(): JSX.Element {
   }
 
   return (
-    <div className={`app${focusMode ? ' focus-mode' : ''}`}>
+    <div className={`app${focusMode ? ' focus-mode' : ''}${presentationMode ? ' presentation-mode' : ''}`}>
       <a className="skip-link" href="#workbench-main">
         Skip to workbench
       </a>
-      <Toolbar />
+      <Toolbar license={license} onOpenLicense={openLicense} onPresent={openPresentation} />
       <div className="workbench-shell">
         <ActivityRail
           activeView={activeView}
@@ -318,7 +340,9 @@ export function App(): JSX.Element {
             id="workbench-main"
             ref={layoutRef}
             style={{
-              gridTemplateColumns: focusMode
+              gridTemplateColumns: presentationMode
+                ? 'minmax(0, 1fr)'
+                : focusMode
                 ? 'minmax(0, 1fr)'
                 : `${sourcePanelOpen ? `${sourcePanelWidth}px 10px` : '0px 0px'} minmax(0, 1fr) ${rightPanelOpen ? `10px ${rightPanelWidth}px` : '0px 0px'}`,
             }}
@@ -354,9 +378,19 @@ export function App(): JSX.Element {
               id="workbench-preview"
               aria-labelledby="preview-heading"
             >
-              <header className="pane-header">
-                <h2 id="preview-heading">Preview</h2>
-                <span>Select a node or link to inspect it</span>
+              <header className={`pane-header${presentationMode ? ' presentation-pane-header' : ''}`}>
+                {presentationMode ? (
+                  <div className="presentation-heading">
+                    <span>Presentation</span>
+                    <h2 id="preview-heading">{session.title}</h2>
+                  </div>
+                ) : (
+                  <>
+                    <h2 id="preview-heading">Preview</h2>
+                    <span>Select a node or link to inspect it</span>
+                  </>
+                )}
+                {presentationMode && <button type="button" className="presentation-exit" onClick={() => setPresentationMode(false)}>Exit presentation <kbd>Esc</kbd></button>}
               </header>
               <PreviewSlot />
             </section>
@@ -396,7 +430,7 @@ export function App(): JSX.Element {
                 className={`side-view side-agent${contextView === 'agent' ? ' side-view-active' : ''}`}
                 id="workbench-agent"
               >
-                <ChatPanel />
+                <ChatPanel onConfigureByok={openByok} />
               </div>
               <div
                 className={`side-view side-history${contextView === 'history' ? ' side-view-active' : ''}`}
@@ -449,6 +483,19 @@ export function App(): JSX.Element {
         onLibrary={focusLibrary}
         focusMode={focusMode}
         onToggleFocus={toggleFocusMode}
+        onOpenLicense={openLicense}
+        onPresent={openPresentation}
+      />
+      <LicenseDialog
+        open={licenseDialogOpen}
+        status={license}
+        onClose={() => setLicenseDialogOpen(false)}
+        onChanged={setLicense}
+      />
+      <ByokDialog
+        open={byokDialogOpen}
+        onClose={() => setByokDialogOpen(false)}
+        onSaved={() => void loadProviders()}
       />
     </div>
   );

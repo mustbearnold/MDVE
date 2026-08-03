@@ -21,6 +21,8 @@ export function CommandPalette({
   onLibrary,
   focusMode,
   onToggleFocus,
+  onOpenLicense,
+  onPresent,
 }: {
   open: boolean;
   onClose: () => void;
@@ -29,6 +31,8 @@ export function CommandPalette({
   onLibrary: () => void;
   focusMode: boolean;
   onToggleFocus: () => void;
+  onOpenLicense: () => void;
+  onPresent: () => void;
 }): JSX.Element | null {
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
@@ -157,7 +161,20 @@ export function CommandPalette({
       shortcut: '⌘⇧↵',
       run: onToggleFocus,
     },
-  ], [addNode, agentProposal, dispatchPreviewCommand, focusMode, future.length, onLibrary, onOpenOutline, onOpenView, onToggleFocus, past.length, redo, select, structuredEditingAvailable, undo]);
+    {
+      id: 'present',
+      label: 'Present diagram',
+      description: 'Open the clean presentation view (MDVE Pro)',
+      shortcut: '⌘⇧P',
+      run: onPresent,
+    },
+    {
+      id: 'license',
+      label: 'Open MDVE Pro',
+      description: 'Manage your license or see what Pro adds',
+      run: onOpenLicense,
+    },
+  ], [addNode, agentProposal, dispatchPreviewCommand, focusMode, future.length, onLibrary, onOpenLicense, onOpenOutline, onOpenView, onPresent, onToggleFocus, past.length, redo, select, structuredEditingAvailable, undo]);
 
   const filteredCommands = useMemo(() => {
     const needle = query.trim().toLowerCase();

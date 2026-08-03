@@ -47,7 +47,7 @@ test('authenticated API preserves revision, history, conversation, and archive c
     assert.equal(ready.status, 200);
     const readiness = await ready.json() as { ok: boolean; version: string };
     assert.equal(readiness.ok, true);
-    assert.equal(readiness.version, '1.0.0');
+    assert.equal(readiness.version, '3.0.0');
 
     const unauthorized = await fetch(`${base}/api/sessions`);
     assert.equal(unauthorized.status, 401);
@@ -86,6 +86,29 @@ test('authenticated API preserves revision, history, conversation, and archive c
     assert.equal(startup.status, 200);
     const starter = (await startup.json()).session as { id: string; revision: number };
     assert.equal(starter.revision, 1);
+
+    const license = await fetch(`${base}/api/license`, { headers: { cookie } });
+    assert.equal(license.status, 200);
+    const licenseStatus = await license.json() as { plan: string; checkoutUrl: string | null };
+    assert.equal(licenseStatus.plan, 'free');
+    assert.equal('licenseKey' in licenseStatus, false);
+    assert.equal(typeof licenseStatus.checkoutUrl, 'object');
+
+    const providers = await fetch(`${base}/api/providers`, { headers: { cookie } });
+    assert.equal(providers.status, 200);
+    const providerList = (await providers.json()).providers as Array<{ id: string }>;
+    assert.ok(providerList.some((provider) => provider.id === 'codex'));
+    assert.ok(providerList.some((provider) => provider.id === 'openai-compatible'));
+
+    const configured = await fetch(`${base}/api/providers/openai-compatible/config`, {
+      method: 'PUT',
+      headers: { ...jsonHeaders, cookie },
+      body: JSON.stringify({ baseUrl: 'http://127.0.0.1:11434/v1', model: 'fixture-model' }),
+    });
+    assert.equal(configured.status, 200);
+    assert.deepEqual(await configured.json(), { baseUrl: 'http://127.0.0.1:11434/v1', model: 'fixture-model', hasApiKey: false });
+    const cleared = await fetch(`${base}/api/providers/openai-compatible/config`, { method: 'DELETE', headers: { cookie } });
+    assert.equal(cleared.status, 200);
 
     const source = 'flowchart TD\n  start[Start] --> finish[Finish]\n';
     const saved = await fetch(`${base}/api/sessions/${starter.id}/diagram`, {

@@ -346,6 +346,24 @@ test('v3 command center runs durable diagram edits', async ({ page }) => {
   }).toBe(true);
 });
 
+test('the free plan exposes Pro presentation and local BYOK without hiding the core editor', async ({ page }) => {
+  await page.getByRole('button', { name: 'Present', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Keep your diagrams moving' })).toBeVisible();
+  await expect(page.getByText('The complete local Mermaid workbench stays free.')).toBeVisible();
+  await page.getByRole('button', { name: 'Close licensing dialog' }).click();
+
+  await page.getByRole('button', { name: 'Agent', exact: true }).click();
+  await page.locator('.chat-settings summary').click();
+  await page.getByLabel('Provider', { exact: true }).selectOption('openai-compatible');
+  await page.getByRole('button', { name: 'Configure BYOK' }).click();
+  await expect(page.getByRole('heading', { name: 'Use your own AI key' })).toBeVisible();
+  await page.locator('#byok-base-url').fill('http://127.0.0.1:11434/v1');
+  await page.locator('#byok-model').fill('local-model');
+  await page.getByRole('button', { name: 'Save connection' }).click();
+  await expect(page.getByText('Ready', { exact: true })).toBeVisible();
+  await page.request.delete('/api/providers/openai-compatible/config');
+});
+
 test('large text, forced colors, and reduced motion preserve the critical workflow', async ({ page }) => {
   await page.emulateMedia({ forcedColors: 'active', reducedMotion: 'reduce' });
   await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });

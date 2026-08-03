@@ -5,7 +5,7 @@ import { useStore } from '../state/store';
 
 let turnSeq = 0;
 
-export function ChatPanel(): JSX.Element {
+export function ChatPanel({ onConfigureByok }: { onConfigureByok?: () => void }): JSX.Element {
   const chat = useStore((s) => s.chat);
   const busy = useStore((s) => s.busy);
   const agentProposal = useStore((s) => s.agentProposal);
@@ -186,6 +186,11 @@ export function ChatPanel(): JSX.Element {
                   ))}
                 </select>
               </label>
+            )}
+            {providerId === 'openai-compatible' && onConfigureByok && (
+              <button type="button" className="byok-settings-button" onClick={onConfigureByok}>
+                Configure BYOK
+              </button>
             )}
           </div>
         </details>

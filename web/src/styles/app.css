@@ -2979,6 +2979,447 @@ button {
   }
 }
 
+/* Product layer ------------------------------------------------------ */
+
+.toolbar-product-actions {
+  flex: 0 0 auto;
+  gap: 5px;
+  padding-left: 8px;
+  border-left: 1px solid var(--border-subtle);
+}
+
+.toolbar-present,
+.toolbar-pro {
+  min-height: 34px;
+  padding-inline: 9px;
+  color: var(--text-secondary);
+  background: rgba(19, 25, 36, 0.8);
+  border-color: rgba(146, 164, 191, 0.22);
+}
+
+.toolbar-present:hover:not(:disabled),
+.toolbar-pro:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: rgba(47, 64, 91, 0.86);
+}
+
+.toolbar-pro {
+  color: #b9d1ff;
+  background: rgba(71, 112, 179, 0.18);
+  border-color: rgba(114, 167, 244, 0.38);
+}
+
+.toolbar-pro-active {
+  color: #dbe8ff;
+  background: rgba(83, 140, 222, 0.27);
+  border-color: rgba(143, 189, 255, 0.58);
+}
+
+.toolbar-product-actions .icon {
+  width: 15px;
+  height: 15px;
+}
+
+.byok-settings-button {
+  min-height: 32px;
+  margin-left: auto;
+  color: #b9d1ff;
+  background: rgba(71, 112, 179, 0.16);
+  border-color: rgba(114, 167, 244, 0.32);
+  white-space: nowrap;
+}
+
+.dialog-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(3, 7, 14, 0.74);
+  backdrop-filter: blur(14px);
+}
+
+.dialog {
+  width: min(520px, 100%);
+  max-height: min(760px, calc(100dvh - 48px));
+  overflow: auto;
+  color: var(--text-primary);
+  background: linear-gradient(180deg, rgba(25, 33, 47, 0.98), rgba(12, 18, 29, 0.99));
+  border: 1px solid rgba(145, 171, 210, 0.3);
+  border-radius: 16px;
+  box-shadow: 0 30px 100px rgba(0, 0, 0, 0.62), 0 0 0 1px rgba(255, 255, 255, 0.035) inset;
+}
+
+.dialog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 22px 24px 18px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.dialog-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.dialog-icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  color: #b8d1ff;
+  background: rgba(80, 128, 210, 0.18);
+  border: 1px solid rgba(114, 167, 244, 0.38);
+  border-radius: 10px;
+}
+
+.dialog-icon .icon {
+  width: 18px;
+  height: 18px;
+}
+
+.dialog-eyebrow {
+  display: block;
+  margin-bottom: 4px;
+  color: #93baff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.dialog h2 {
+  margin: 0;
+  color: #f4f6fa;
+  font-size: 18px;
+  letter-spacing: -0.02em;
+}
+
+.dialog-close {
+  width: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  color: var(--text-muted);
+  background: transparent;
+  border-color: transparent;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.dialog-body {
+  display: grid;
+  gap: 16px;
+  padding: 22px 24px 24px;
+}
+
+.dialog-lead,
+.dialog-footnote,
+.license-not-configured {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.dialog-lead {
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.license-value-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.license-value-grid > div {
+  display: grid;
+  gap: 3px;
+  padding: 11px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--border-subtle);
+  border-radius: 9px;
+}
+
+.license-value-grid strong {
+  color: #e9eff9;
+  font-size: 12px;
+}
+
+.license-value-grid span {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.license-active,
+.dialog-callout {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  background: rgba(58, 189, 133, 0.1);
+  border: 1px solid rgba(70, 213, 150, 0.3);
+  border-radius: 10px;
+}
+
+.license-active-mark {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  place-items: center;
+  color: #092116;
+  background: var(--success);
+  border-radius: 50%;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.license-active strong,
+.dialog-callout strong {
+  display: block;
+  color: #e2faec;
+  font-size: 13px;
+}
+
+.license-active p,
+.dialog-callout span {
+  display: block;
+  margin: 3px 0 0;
+  color: #a9c5b4;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.dialog-callout {
+  background: rgba(78, 125, 204, 0.1);
+  border-color: rgba(114, 167, 244, 0.28);
+}
+
+.dialog-callout strong {
+  color: #cfe0ff;
+}
+
+.dialog-callout span {
+  color: #aebfd9;
+}
+
+.license-checkout {
+  width: 100%;
+  min-height: 42px;
+  text-decoration: none;
+}
+
+.license-not-configured {
+  padding: 11px 12px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px dashed var(--border-strong);
+  border-radius: 9px;
+  font-size: 12px;
+}
+
+.license-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.license-divider::before,
+.license-divider::after {
+  height: 1px;
+  flex: 1;
+  content: '';
+  background: var(--border-subtle);
+}
+
+.dialog-field {
+  display: grid;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.dialog-field small {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.dialog-field input {
+  width: 100%;
+  min-height: 40px;
+  background: rgba(5, 10, 19, 0.7);
+}
+
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.dialog-actions .button-primary {
+  min-height: 40px;
+}
+
+.dialog-error {
+  margin: 0;
+  padding: 10px 12px;
+  color: #ffb8c0;
+  background: var(--danger-surface);
+  border: 1px solid rgba(255, 102, 117, 0.4);
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.dialog-footnote {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.presentation-mode .toolbar,
+.presentation-mode .workbench-shell > .activity-rail,
+.presentation-mode .workbench-tabs,
+.presentation-mode .pane-code,
+.presentation-mode .panel-divider,
+.presentation-mode .pane-side,
+.presentation-mode .panel-open-button,
+.presentation-mode .change-tray,
+.presentation-mode .focus-exit {
+  display: none;
+}
+
+.presentation-mode .workbench-shell,
+.presentation-mode .workbench-stage,
+.presentation-mode .layout,
+.presentation-mode .pane-preview {
+  min-height: 0;
+}
+
+.presentation-mode .layout {
+  background: radial-gradient(circle at 50% 10%, rgba(86, 133, 206, 0.16), transparent 42%), #080d15;
+}
+
+.presentation-mode .pane-preview {
+  border: 0;
+}
+
+.presentation-mode .preview {
+  background: transparent;
+}
+
+.presentation-pane-header {
+  min-height: 58px;
+  padding-inline: 24px;
+  background: rgba(8, 13, 21, 0.82);
+}
+
+.presentation-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.presentation-heading > span {
+  color: #8eb8ff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.presentation-heading h2 {
+  color: #f2f5fa;
+  font-size: 15px;
+}
+
+.presentation-exit {
+  min-height: 32px;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.045);
+  border-color: var(--border-subtle);
+}
+
+.presentation-exit kbd {
+  margin-left: 4px;
+}
+
+@media (max-width: 1120px) {
+  .toolbar-product-actions {
+    padding-left: 4px;
+  }
+
+  .toolbar-present,
+  .toolbar-pro {
+    width: 34px;
+    min-width: 34px;
+    padding: 0;
+    font-size: 0;
+  }
+
+  .toolbar-product-actions .icon {
+    width: 16px;
+    height: 16px;
+  }
+}
+
+@media (max-width: 600px) {
+  .dialog-layer {
+    align-items: end;
+    padding: 10px;
+  }
+
+  .dialog {
+    max-height: calc(100dvh - 20px);
+    border-radius: 14px;
+  }
+
+  .dialog-header,
+  .dialog-body {
+    padding-inline: 16px;
+  }
+
+  .license-value-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .presentation-pane-header {
+    padding-inline: 14px;
+  }
+
+  .presentation-heading {
+    min-width: 0;
+  }
+
+  .presentation-heading h2 {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .presentation-exit {
+    font-size: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dialog-layer,
+  .dialog,
+  .presentation-mode * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
 @media (max-width: 1120px) {
   :root {
     --control-height: 44px;

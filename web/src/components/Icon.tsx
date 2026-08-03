@@ -3,12 +3,14 @@ export type IconName =
   | 'fit'
   | 'history'
   | 'inspector'
+  | 'key'
   | 'library'
   | 'link'
   | 'node'
   | 'outline'
   | 'plus'
   | 'preview'
+  | 'present'
   | 'reset'
   | 'redo'
   | 'source'
@@ -71,6 +73,13 @@ export function Icon({ name }: { name: IconName }): JSX.Element {
           <path d="m10 9 5 3-5 3z" />
         </>
       )}
+      {name === 'present' && (
+        <>
+          <rect x="4" y="5" width="16" height="14" rx="2" />
+          <path d="m10 9 5 3-5 3z" />
+          <path d="M8 3h8" />
+        </>
+      )}
       {name === 'inspector' && (
         <>
           <circle cx="11" cy="11" r="6.5" />
@@ -87,6 +96,12 @@ export function Icon({ name }: { name: IconName }): JSX.Element {
         <>
           <path d="M4 12a8 8 0 1 0 2.35-5.65L4 8.7" />
           <path d="M4 4v4.7h4.7M12 8v4l2.7 1.6" />
+        </>
+      )}
+      {name === 'key' && (
+        <>
+          <circle cx="8.5" cy="15.5" r="3.5" />
+          <path d="m11 13 8-8M15 6l3 3M17 4l3 3" />
         </>
       )}
       {name === 'outline' && (

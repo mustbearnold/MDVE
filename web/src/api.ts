@@ -38,6 +38,20 @@ export interface ProviderInfo {
   status: { ok: boolean; detail: string };
 }
 
+export interface LicenseStatus {
+  plan: 'free' | 'pro';
+  productConfigured: boolean;
+  checkoutUrl: string | null;
+  detail: string;
+  verifiedAt: number | null;
+}
+
+export interface OpenAICompatibleConfigSummary {
+  baseUrl: string;
+  model: string;
+  hasApiKey: boolean;
+}
+
 export type AgentEvent =
   | { type: 'thread'; threadId: string }
   | { type: 'status'; text: string }
@@ -158,6 +172,28 @@ export const api = {
     req<{ ok: true }>(`/api/sessions/${id}`, { method: 'DELETE' }),
 
   providers: () => req<{ providers: ProviderInfo[] }>('/api/providers'),
+
+  license: () => req<LicenseStatus>('/api/license'),
+
+  activateLicense: (licenseKey: string) =>
+    req<LicenseStatus>('/api/license/activate', {
+      method: 'POST',
+      headers: json,
+      body: JSON.stringify({ licenseKey }),
+    }),
+
+  deactivateLicense: () => req<LicenseStatus>('/api/license/deactivate', { method: 'POST' }),
+
+  openAICompatibleConfig: () => req<OpenAICompatibleConfigSummary>('/api/providers/openai-compatible/config'),
+
+  saveOpenAICompatibleConfig: (config: { baseUrl: string; model: string; apiKey?: string }) =>
+    req<OpenAICompatibleConfigSummary>('/api/providers/openai-compatible/config', {
+      method: 'PUT',
+      headers: json,
+      body: JSON.stringify(config),
+    }),
+
+  clearOpenAICompatibleConfig: () => req<OpenAICompatibleConfigSummary>('/api/providers/openai-compatible/config', { method: 'DELETE' }),
 
   stop: (id: string) => req<{ ok: true }>(`/api/sessions/${id}/stop`, { method: 'POST' }),
 };

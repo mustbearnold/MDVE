@@ -83,7 +83,7 @@ async function startServer(dataRoot, port, crashAt = '') {
       MDVE_HOST: '127.0.0.1',
       MDVE_PORT: String(port),
       MDVE_AUTH_REQUIRED: '0',
-      MDVE_VERSION: '1.0.0',
+      MDVE_VERSION: '3.0.0',
       ...(crashAt ? { MDVE_DURABILITY_CRASH: crashAt } : { MDVE_DURABILITY_CRASH: '' }),
     },
     stdio: ['ignore', 'pipe', 'pipe'],

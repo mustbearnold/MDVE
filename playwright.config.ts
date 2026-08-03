@@ -10,7 +10,7 @@ const defaultServerCommand = [
   'MDVE_HOST=127.0.0.1',
   'MDVE_PORT=4187',
   'MDVE_AUTH_REQUIRED=0',
-  'MDVE_VERSION=1.0.0',
+  'MDVE_VERSION=3.0.0',
   'MDVE_WEB_DIST=dist/web',
   'node dist/server/index.js',
 ].join(' ');

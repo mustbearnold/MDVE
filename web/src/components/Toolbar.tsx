@@ -2,6 +2,7 @@ import { useRef, type RefObject } from 'react';
 
 import { supportsStructuredEditing } from '../mermaid/parse';
 import { useStore, type LibraryScope } from '../state/store';
+import type { LicenseStatus } from '../api';
 import { Icon } from './Icon';
 
 const DIRECTIONS = [
@@ -20,7 +21,15 @@ function download(name: string, content: string, type: string): void {
   URL.revokeObjectURL(url);
 }
 
-export function Toolbar(): JSX.Element {
+export function Toolbar({
+  license,
+  onOpenLicense,
+  onPresent,
+}: {
+  license: LicenseStatus | null;
+  onOpenLicense: () => void;
+  onPresent: () => void;
+}): JSX.Element {
   const source = useStore((s) => s.source);
   const setSource = useStore((s) => s.setSource);
   const applyTransaction = useStore((s) => s.applyTransaction);
@@ -233,6 +242,22 @@ export function Toolbar(): JSX.Element {
         </button>
         <button className="icon-button" onClick={redo} disabled={future.length === 0} title="Redo" aria-label="Redo">
           <Icon name="redo" />
+        </button>
+      </div>
+
+      <div className="toolbar-group toolbar-product-actions" aria-label="MDVE product actions">
+        <button type="button" className="toolbar-present" onClick={onPresent} title="Open a clean presentation view">
+          <Icon name="present" />
+          Present
+        </button>
+        <button
+          type="button"
+          className={`toolbar-pro${license?.plan === 'pro' ? ' toolbar-pro-active' : ''}`}
+          onClick={onOpenLicense}
+          title={license?.plan === 'pro' ? 'Manage MDVE Pro' : 'See MDVE Pro'}
+        >
+          <Icon name="key" />
+          {license?.plan === 'pro' ? 'Pro' : 'Get Pro'}
         </button>
       </div>
 
